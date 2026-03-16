@@ -1,0 +1,58 @@
+# =========================
+# Archives
+# =========================
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+
+# =========================
+# Python / OpenMV
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# ROS / CMake build outputs
+# =========================
+build/
+devel/
+install/
+log/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# =========================
+# Keil / STM32 generated files
+# =========================
+*.axf
+*.bin
+*.hex
+*.map
+*.lst
+*.o
+*.d
+*.crf
+*.dep
+*.uvguix.*
+*.uvoptx
+JLinkSettings.ini
+EventRecorderStub.scvd
+
+# =========================
+# IDE / OS temp files
+# =========================
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
