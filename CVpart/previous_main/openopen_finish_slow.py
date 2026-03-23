@@ -1,5 +1,5 @@
-import sensor, image, time  # 导入摄像头、图像处理和时间模块。
-from pyb import LED, UART  # 导入LED和串口类。
+import sensor, image, time  # 导入摄像头、图像处理和时间模块。# type: ignore
+from pyb import LED, UART  # 导入LED和串口类。# type: ignore
 
 LED(1).on()  # 点亮红灯，表示程序启动。
 LED(2).on()  # 点亮绿灯，表示程序启动。
