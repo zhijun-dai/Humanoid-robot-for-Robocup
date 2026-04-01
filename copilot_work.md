@@ -170,3 +170,41 @@
 6. 结论
 - 目前已经把“机器与运行时”打通到可运行 Isaac 的前置状态。
 - 剩余关键动作只有 NGC 登录与镜像拉取，完成后即可自动进入 headless 冒烟测试。
+
+## 本轮追加进展（46796 端口实时状态快照）
+1. 连接与主机
+- 端口 `46796` 可连接，认证成功。
+- 当前主机名: `autodl-container-fxqnqh00m3-e4097439`。
+
+2. GPU 与驱动
+- GPU: `NVIDIA RTX PRO 6000 Blackwell Server Edition`
+- Driver: `595.58.03`
+- 显存: `97887 MiB`
+
+3. Docker 运行时
+- Docker Server: `29.1.3`
+- DockerRootDir: `/root/autodl-tmp/docker-data`
+
+4. Isaac 镜像状态
+- 当前 `docker images` 中未发现 `nvcr.io/nvidia/isaac-sim:*` 镜像（尚未落盘）。
+
+5. 结论
+- 远端运行环境已就绪，当前停在“NGC 登录后拉取 Isaac 镜像并启动冒烟测试”这一步。
+
+## 本轮追加进展（“停在这了”后的恢复）
+1. 根因定位
+- `remote_ngc_pull_isaac.sh` 执行日志显示 `Login Succeeded`，说明 NGC key 有效、权限正确。
+- 后续 `docker pull nvcr.io/nvidia/isaac-sim:4.5.0` 因镜像层数量大、下载时间长，在交互会话中被中断（出现 `^C`），导致误以为卡死。
+
+2. 处理动作
+- 已改为远端后台单进程拉取，避免本地终端超时/中断影响。
+- 当前拉取进程存在：`docker pull nvcr.io/nvidia/isaac-sim:4.5.0`。
+- 进度日志路径：`/root/isaac/logs/pull_isaac.log`。
+
+3. 当前状态
+- 拉取正在进行中（日志持续出现 layer `Download complete` / `Verifying Checksum`）。
+- 镜像尚未完全落盘（`docker images` 暂未出现 `nvcr.io/nvidia/isaac-sim:4.5.0`）。
+
+4. 下一步
+- 持续轮询直到镜像落盘。
+- 镜像完成后立即启动 120 秒 headless 冒烟测试并采集日志。

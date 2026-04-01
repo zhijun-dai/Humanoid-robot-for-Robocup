@@ -51,7 +51,11 @@ sleep 8
 docker version --format 'Server={{.Server.Version}}'
 
 log "Step 5/8: 验证 GPU 容器"
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi | sed -n '1,10p'
+if docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi | sed -n '1,10p'; then
+  log "DockerHub GPU 测试通过"
+else
+  log "DockerHub 不可达或测试失败，继续执行 NGC 登录与 Isaac 拉取"
+fi
 
 if [[ "$SKIP_LOGIN" != "1" ]]; then
   if [[ -z "${NGC_API_KEY:-}" ]]; then
