@@ -270,6 +270,40 @@ function ToPixel {
     return New-Object System.Drawing.PointF([float]$px, [float]$py)
 }
 
+function Draw-ConfiguredSegment {
+    param(
+        [System.Drawing.Graphics]$Graphics,
+        [object]$Segment,
+        [string]$ColorName,
+        [string]$DashName,
+        [double]$Width = 6.0
+    )
+
+    if ($null -eq $Segment -or $Segment.Count -lt 2) { return }
+
+    $p0 = ToPixel -x ([double]$Segment[0][0]) -y ([double]$Segment[0][1])
+    $p1 = ToPixel -x ([double]$Segment[1][0]) -y ([double]$Segment[1][1])
+
+    $color = [System.Drawing.Color]::Black
+    if ($ColorName -eq 'red') {
+        $color = [System.Drawing.Color]::FromArgb(220, 40, 40)
+    }
+    elseif ($ColorName -eq 'gray') {
+        $color = [System.Drawing.Color]::FromArgb(90, 90, 90)
+    }
+
+    $pen = New-Object System.Drawing.Pen($color, [float]$Width)
+    if ($DashName -eq 'dash') {
+        $pen.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+    }
+    else {
+        $pen.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Solid
+    }
+
+    $Graphics.DrawLine($pen, $p0, $p1)
+    $pen.Dispose()
+}
+
 $lines = Get-Content $dxfPath
 $polys = Parse-LwPolylinesFromEntities -lines $lines
 $extras = Parse-EntityExtras -lines $lines
@@ -312,14 +346,15 @@ foreach ($ln in $extras.lines) {
     $g.DrawLine($extraLinePen, $pA, $pB)
 }
 
-if ($null -ne $data.elements.start_line.candidate_segment) {
-    $s0 = $data.elements.start_line.candidate_segment[0]
-    $s1 = $data.elements.start_line.candidate_segment[1]
-    $p0 = ToPixel -x ([double]$s0[0]) -y ([double]$s0[1])
-    $p1 = ToPixel -x ([double]$s1[0]) -y ([double]$s1[1])
-    $startPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(220, 40, 40), 6)
-    $g.DrawLine($startPen, $p0, $p1)
-    $startPen.Dispose()
+if ($null -ne $data.elements.obstacle.line_segment) {
+    Draw-ConfiguredSegment -Graphics $g -Segment $data.elements.obstacle.line_segment -ColorName $data.elements.obstacle.color -DashName $data.elements.obstacle.dash -Width 8.0
+}
+
+if ($null -ne $data.elements.start_line.line_segment) {
+    Draw-ConfiguredSegment -Graphics $g -Segment $data.elements.start_line.line_segment -ColorName $data.elements.start_line.color -DashName $data.elements.start_line.dash -Width 8.0
+}
+elseif ($null -ne $data.elements.start_line.candidate_segment) {
+    Draw-ConfiguredSegment -Graphics $g -Segment $data.elements.start_line.candidate_segment -ColorName 'black' -DashName 'solid' -Width 8.0
 }
 
 $font = New-Object System.Drawing.Font('Microsoft YaHei', 18, [System.Drawing.FontStyle]::Bold)

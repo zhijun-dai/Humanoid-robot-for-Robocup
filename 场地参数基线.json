@@ -146,22 +146,34 @@
   },
   "elements": {
     "start_line": {
-      "status": "pending_manual_confirmation",
-      "candidate_segment": [
+      "status": "confirmed_for_sim",
+      "line_segment": [
         [
-          4192.877810431002,
+          4120.0,
           2694.412157625529
         ],
         [
-          4162.923912135048,
-          2694.412157625529
+          4120.0,
+          3044.412157625529
         ]
-      ]
+      ],
+      "color": "black",
+      "dash": "solid"
     },
     "obstacle": {
       "type": "wood_strip",
-      "size": null,
-      "pose": null
+      "line_segment": [
+        [
+          3940.0,
+          2694.412157625529
+        ],
+        [
+          3940.0,
+          3044.412157625529
+        ]
+      ],
+      "color": "red",
+      "dash": "dash"
     },
     "qr_slots": []
   },
