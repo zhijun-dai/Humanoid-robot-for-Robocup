@@ -1,0 +1,20 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation 0.11296748699958163 -0.9364569114406769 -0.3320945646890172 5.586303381668938
+  position -11.477344428166658 -2.723844340020162 9.575928350040453
+}
+Floor {
+}
+Background {
+  skyColor [
+    0.15 0.45 1
+  ]
+}
+DirectionalLight {
+  direction 0 -1 0
+}

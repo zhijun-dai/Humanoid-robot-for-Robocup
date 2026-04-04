@@ -399,3 +399,160 @@ git pull
 
 1. 能继续按量省钱。
 2. 又能最大化保留环境与实验成果。
+
+---
+
+## 14. 云机手工操作一页版（变量 + 流程全集中）
+
+这一节是你后续的唯一执行入口。
+
+### 14.1 命令到底在哪个终端输入
+
+你会看到两种提示符：
+
+1. 本地 Windows 终端（pwsh）
+用于发起 SSH 登录。
+
+2. 云机 Linux 终端（登录后）
+用于执行 docker、nvidia-smi、isaac 相关命令。
+
+简单判断：
+
+1. 看到 `PS D:\...>`：你在本地。
+2. 看到 `root@autodl-container-...#`：你在云机。
+
+### 14.2 变量清单（先准备）
+
+把下面 5 个值记在一处（建议密码管理器）：
+
+```text
+AUTODL_HOST=connect.westd.seetacloud.com
+AUTODL_PORT=46796
+AUTODL_USER=root
+AUTODL_PASS=<你的云机密码>
+NGC_API_KEY=<你的NGC Personal Key>
+ISAAC_TAG=4.5.0
+```
+
+### 14.3 第 1 步：从本地 pwsh 登录云机
+
+在本地 pwsh 输入：
+
+```powershell
+ssh -p 46796 root@connect.westd.seetacloud.com
+```
+
+然后输入云机密码。
+
+### 14.4 第 2 步：登录后先做健康检查（在云机里输）
+
+```bash
+hostname
+nvidia-smi
+docker version
+docker info | grep -E "Docker Root Dir|Runtimes"
+```
+
+通过标准：
+
+1. `nvidia-smi` 能看到 RTX PRO 6000。
+2. `docker version` 有 Server。
+3. `docker info` 里有 `nvidia` runtime。
+
+### 14.5 第 3 步：登录 NGC（在云机里输）
+
+```bash
+echo "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" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+```
+
+输出出现 `Login Succeeded` 才算通过。
+
+### 14.6 第 4 步：拉取 Isaac 镜像（在云机里输）
+
+前台拉取（你想看实时日志）：
+
+```bash
+docker pull nvcr.io/nvidia/isaac-sim:4.5.0
+```
+
+如果网络不稳，改后台拉取：
+
+```bash
+mkdir -p /root/isaac/logs
+nohup sh -c "docker pull nvcr.io/nvidia/isaac-sim:4.5.0 > /root/isaac/logs/pull_isaac.log 2>&1" >/dev/null 2>&1 &
+```
+
+查看后台进度：
+
+```bash
+pgrep -af "docker pull nvcr.io/nvidia/isaac-sim:4.5.0"
+tail -n 40 /root/isaac/logs/pull_isaac.log
+```
+看是否还在拉：
+pgrep -af "docker pull nvcr.io/nvidia/isaac-sim:4.5.0"
+
+看是否拉完：
+docker images --format "{{.Repository}}:{{.Tag}}" | grep "^nvcr.io/nvidia/isaac-sim:" || echo NOT_YET
+
+查看是否拉完：
+
+```bash
+docker images --format '{{.Repository}}:{{.Tag}}' | grep '^nvcr.io/nvidia/isaac-sim:' || echo NOT_YET
+```
+
+### 14.7 第 5 步：120 秒 headless 冒烟测试（在云机里输）
+
+```bash
+mkdir -p /root/isaac/cache/kit /root/isaac/cache/ov /root/isaac/cache/pip /root/isaac/data /root/isaac/logs
+docker rm -f isaac-test 2>/dev/null || true
+
+docker run --name isaac-test --gpus all --network host \
+	-e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e OMNI_KIT_ACCEPT_EULA=YES \
+	-v /root/isaac/cache/kit:/isaac-sim/kit/cache:rw \
+	-v /root/isaac/cache/ov:/root/.cache/ov:rw \
+	-v /root/isaac/cache/pip:/root/.cache/pip:rw \
+	-v /root/isaac/data:/isaac-sim/data:rw \
+	nvcr.io/nvidia/isaac-sim:4.5.0 \
+	/bin/bash -lc "./runheadless.sh --/app/quitAfter=120" \
+	> /root/isaac/logs/isaac_test.log 2>&1
+```
+
+看结果：
+
+```bash
+tail -n 120 /root/isaac/logs/isaac_test.log
+docker ps -a --filter name=isaac-test
+```
+
+### 14.8 成功判定（你只看这 4 条）
+
+1. 能登录 nvcr.io（`Login Succeeded`）。
+2. `docker images` 里能看到 `nvcr.io/nvidia/isaac-sim:4.5.0`。
+3. `isaac-test` 容器能启动并运行一段时间。
+4. `isaac_test.log` 没有立即崩溃或权限错误。
+
+### 14.9 常见卡点与处理
+
+1. 拉取很慢不是卡死
+镜像很大，先看 `tail -f /root/isaac/logs/pull_isaac.log` 是否持续有新行。
+
+2. 误在本地 pwsh 输入了 Linux 命令
+先 `ssh` 登录云机再执行。
+
+3. pull 进程异常中断
+```bash
+pkill -f "docker pull nvcr.io/nvidia/isaac-sim:4.5.0" || true
+nohup sh -c "docker pull nvcr.io/nvidia/isaac-sim:4.5.0 > /root/isaac/logs/pull_isaac.log 2>&1" >/dev/null 2>&1 &
+```
+
+### 14.10 收工与安全
+
+1. 收工前保存日志：
+```bash
+ls -lh /root/isaac/logs
+```
+
+2. 你本会话中曾暴露过云机密码和 NGC key，建议本轮结束后立即：
+
+1. 重置云机密码。
+2. 在 NGC 里撤销旧 key，重新生成新 key。

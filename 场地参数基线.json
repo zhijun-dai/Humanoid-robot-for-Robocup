@@ -1,0 +1,35 @@
+{
+  "version": "v0.1",
+  "source": "competition_screenshot_and_repo_notes",
+  "units": "mm",
+  "field": {
+    "width": 3660,
+    "height": 2440
+  },
+  "track": {
+    "length": 6140,
+    "width": 350,
+    "direction": "counter_clockwise"
+  },
+  "constraints": {
+    "narrow_gate_min_width": 240
+  },
+  "elements": {
+    "start_line": null,
+    "obstacle": {
+      "type": "wood_strip",
+      "size": null,
+      "pose": null
+    },
+    "qr_slots": []
+  },
+  "validation": {
+    "status": "incomplete",
+    "missing": [
+      "start_line_pose",
+      "obstacle_size_and_pose",
+      "qr_slot_poses",
+      "track_centerline_geometry"
+    ]
+  }
+}
