@@ -1,0 +1,97 @@
+{
+  "version": "1.0",
+  "base_frame": {
+    "width": 160,
+    "height": 120
+  },
+  "camera": {
+    "pitch_deg": 30.0,
+    "height_cm": 17.0,
+    "vfov_deg": 52.0,
+    "hfov_deg": 70.0,
+    "row_dist_min_cm": 6.0,
+    "row_dist_max_cm": 300.0
+  },
+  "turn": {
+    "start_dist_cm": 42.0,
+    "end_dist_cm": 16.0,
+    "err_cm": 3.5
+  },
+  "roi": {
+    "rois_px": [
+      [0, 84, 160, 30, 0.2],
+      [0, 54, 160, 28, 0.55],
+      [0, 24, 160, 24, 0.25]
+    ],
+    "scan_lines_per_roi": 5,
+    "min_track_width": 18,
+    "max_track_width": 145,
+    "min_valid_lines": 3,
+    "width_std_max": 14,
+    "conf_min": 0.25
+  },
+  "threshold": {
+    "offset": 8,
+    "min": 25,
+    "max": 120
+  },
+  "preprocess": {
+    "use_histeq": true,
+    "use_binary": false,
+    "use_erode": true,
+    "erode_iter": 1,
+    "enable_debug_draw": true
+  },
+  "fusion": {
+    "smooth_alpha": 0.65,
+    "curve_gain": 0.25,
+    "angle_gain": 0.22,
+    "min_weight": 0.1,
+    "lookahead_gain": 0.35
+  },
+  "pid": {
+    "curve_switch_cm": 4.5,
+    "straight": {
+      "kp": 0.7,
+      "ki": 0.015,
+      "kd": 0.12
+    },
+    "curve": {
+      "kp": 1.05,
+      "ki": 0.008,
+      "kd": 0.18
+    },
+    "i_clamp": 60.0
+  },
+  "steer": {
+    "sat": 70.0,
+    "scale": 22.0,
+    "deadband": 6.0
+  },
+  "lost": {
+    "hold_frames": 6,
+    "search_turn": 26.0
+  },
+  "output": {
+    "send_interval_ms": 70,
+    "uart": {
+      "id": 1,
+      "baud": 9600
+    },
+    "route": {
+      "go": "1",
+      "left": "2",
+      "right": "3",
+      "slight_left": "4"
+    }
+  },
+  "webots": {
+    "base_speed": 3.2,
+    "steer_to_wheel": 0.04,
+    "camera": {
+      "width": 320,
+      "height": 240,
+      "field_of_view": 1.0
+    }
+  }
+}

@@ -4,16 +4,50 @@ import time
 import math
 from pyb import UART, LED  # type: ignore
 
+try:
+	import ujson as json  # type: ignore
+except ImportError:
+	import json  # type: ignore
+
+
+def _cfg_get(cfg, path, default):
+	cur = cfg
+	parts = path.split('.')
+	for p in parts:
+		if not isinstance(cur, dict) or (p not in cur):
+			return default
+		cur = cur[p]
+	return cur
+
+
+def _load_shared_cfg():
+	# 兼容本地仓库运行与拷贝到设备后的运行路径。
+	candidates = (
+		"line_follow_params.json",
+		"../line_follow_params.json",
+		"../../line_follow_params.json",
+	)
+	for p in candidates:
+		try:
+			with open(p, "r") as f:
+				return json.load(f)
+		except Exception:
+			pass
+	return {}
+
+
+SHARED_CFG = _load_shared_cfg()
+
 
 # ---------------------- 串口配置 ----------------------
-UART_ID = 1
-UART_BAUD = 9600
+UART_ID = int(_cfg_get(SHARED_CFG, "output.uart.id", 1))
+UART_BAUD = int(_cfg_get(SHARED_CFG, "output.uart.baud", 9600))
 uart = UART(UART_ID, UART_BAUD)
 
-ROUTE_GO = "1"
-ROUTE_LEFT = "2"
-ROUTE_RIGHT = "3"
-ROUTE_SLIGHT_LEFT = "4"
+ROUTE_GO = str(_cfg_get(SHARED_CFG, "output.route.go", "1"))
+ROUTE_LEFT = str(_cfg_get(SHARED_CFG, "output.route.left", "2"))
+ROUTE_RIGHT = str(_cfg_get(SHARED_CFG, "output.route.right", "3"))
+ROUTE_SLIGHT_LEFT = str(_cfg_get(SHARED_CFG, "output.route.slight_left", "4"))
 
 
 # ---------------------- 相机与算法参数 ----------------------
@@ -26,78 +60,79 @@ sensor.set_auto_whitebal(False)
 
 clock = time.clock()
 
-IMG_W = 160
-IMG_H = 120
+IMG_W = int(_cfg_get(SHARED_CFG, "base_frame.width", 160))
+IMG_H = int(_cfg_get(SHARED_CFG, "base_frame.height", 120))
 IMG_CX = IMG_W // 2
 
 # 相机几何模型（近似）：向下俯视约30度，建立像素行到地面距离映射。
-CAM_PITCH_DEG = 30.0
-CAM_HEIGHT_CM = 17.0
-CAM_VFOV_DEG = 52.0
-CAM_HFOV_DEG = 70.0
-ROW_DIST_MIN_CM = 6.0
-ROW_DIST_MAX_CM = 300.0
+CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
+CAM_HEIGHT_CM = float(_cfg_get(SHARED_CFG, "camera.height_cm", 17.0))
+CAM_VFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.vfov_deg", 52.0))
+CAM_HFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.hfov_deg", 70.0))
+ROW_DIST_MIN_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_min_cm", 6.0))
+ROW_DIST_MAX_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_max_cm", 300.0))
 
 # 转弯触发距离模型：到达一定距离且偏移足够时提前入弯。
-TURN_START_DIST_CM = 42.0
-TURN_END_DIST_CM = 16.0
-TURN_ERR_CM = 3.5
+TURN_START_DIST_CM = float(_cfg_get(SHARED_CFG, "turn.start_dist_cm", 42.0))
+TURN_END_DIST_CM = float(_cfg_get(SHARED_CFG, "turn.end_dist_cm", 16.0))
+TURN_ERR_CM = float(_cfg_get(SHARED_CFG, "turn.err_cm", 3.5))
 
 # 三层ROI：近端抑制抖动，中端主控，远端预判弯道。
-ROIS = [
-	(0, 84, 160, 30, 0.20),  # near
-	(0, 54, 160, 28, 0.55),  # mid
-	(0, 24, 160, 24, 0.25),  # far
+_ROIS_DEFAULT = [
+	[0, 84, 160, 30, 0.20],
+	[0, 54, 160, 28, 0.55],
+	[0, 24, 160, 24, 0.25],
 ]
+ROIS = [tuple(r) for r in _cfg_get(SHARED_CFG, "roi.rois_px", _ROIS_DEFAULT)]
 
-SCAN_LINES_PER_ROI = 5
-MIN_TRACK_WIDTH = 18
-MAX_TRACK_WIDTH = 145
+SCAN_LINES_PER_ROI = int(_cfg_get(SHARED_CFG, "roi.scan_lines_per_roi", 5))
+MIN_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_track_width", 18))
+MAX_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_track_width", 145))
 
 # 动态阈值参数：基于Otsu结果上移，适应光照变化。
-TH_OFFSET = 8
-TH_MIN = 25
-TH_MAX = 120
+TH_OFFSET = int(_cfg_get(SHARED_CFG, "threshold.offset", 8))
+TH_MIN = int(_cfg_get(SHARED_CFG, "threshold.min", 25))
+TH_MAX = int(_cfg_get(SHARED_CFG, "threshold.max", 120))
 
 # 预处理与稳定性增强。
-USE_HISTEQ = True
-USE_BINARY = False
-USE_ERODE = True
-ERODE_ITER = 1
-ENABLE_DEBUG_DRAW = True
+USE_HISTEQ = bool(_cfg_get(SHARED_CFG, "preprocess.use_histeq", True))
+USE_BINARY = bool(_cfg_get(SHARED_CFG, "preprocess.use_binary", False))
+USE_ERODE = bool(_cfg_get(SHARED_CFG, "preprocess.use_erode", True))
+ERODE_ITER = int(_cfg_get(SHARED_CFG, "preprocess.erode_iter", 1))
+ENABLE_DEBUG_DRAW = bool(_cfg_get(SHARED_CFG, "preprocess.enable_debug_draw", True))
 
-MIN_VALID_LINES = 3
-WIDTH_STD_MAX = 14
-CONF_MIN = 0.25
-SMOOTH_ALPHA = 0.65
-CURVE_GAIN = 0.25
-ANGLE_GAIN = 0.22
-MIN_WEIGHT = 0.10
+MIN_VALID_LINES = int(_cfg_get(SHARED_CFG, "roi.min_valid_lines", 3))
+WIDTH_STD_MAX = float(_cfg_get(SHARED_CFG, "roi.width_std_max", 14))
+CONF_MIN = float(_cfg_get(SHARED_CFG, "roi.conf_min", 0.25))
+SMOOTH_ALPHA = float(_cfg_get(SHARED_CFG, "fusion.smooth_alpha", 0.65))
+CURVE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.curve_gain", 0.25))
+ANGLE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.angle_gain", 0.22))
+MIN_WEIGHT = float(_cfg_get(SHARED_CFG, "fusion.min_weight", 0.10))
 
 # 前瞻增益：让远端信息提前参与控制。
-LOOKAHEAD_GAIN = 0.35
+LOOKAHEAD_GAIN = float(_cfg_get(SHARED_CFG, "fusion.lookahead_gain", 0.35))
 
 # 双模式PID参数（直道/弯道）。
-CURVE_SWITCH_CM = 4.5
-KP_STRAIGHT = 0.70
-KI_STRAIGHT = 0.015
-KD_STRAIGHT = 0.12
-KP_CURVE = 1.05
-KI_CURVE = 0.008
-KD_CURVE = 0.18
-I_CLAMP = 60
+CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
+KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
+KI_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.ki", 0.015))
+KD_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kd", 0.12))
+KP_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.kp", 1.05))
+KI_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.ki", 0.008))
+KD_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.kd", 0.18))
+I_CLAMP = float(_cfg_get(SHARED_CFG, "pid.i_clamp", 60))
 
 # 非线性映射：避免边缘大误差导致过激转向。
-STEER_SAT = 70
-STEER_SCALE = 22.0
-DEADBAND = 6
+STEER_SAT = float(_cfg_get(SHARED_CFG, "steer.sat", 70))
+STEER_SCALE = float(_cfg_get(SHARED_CFG, "steer.scale", 22.0))
+DEADBAND = float(_cfg_get(SHARED_CFG, "steer.deadband", 6))
 
 # 丢线恢复。
-LOST_HOLD_FRAMES = 6
-LOST_SEARCH_TURN = 26
+LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
+LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 26))
 
 # 输出节流。
-SEND_INTERVAL_MS = 70
+SEND_INTERVAL_MS = int(_cfg_get(SHARED_CFG, "output.send_interval_ms", 70))
 last_send_ms = 0
 
 

@@ -1,59 +1,109 @@
 from controller import Robot
 import math
+import os
+import json
 
+
+def _cfg_get(cfg, path, default):
+    cur = cfg
+    for key in path.split("."):
+        if not isinstance(cur, dict) or key not in cur:
+            return default
+        cur = cur[key]
+    return cur
+
+
+def _load_shared_cfg():
+    base_dir = os.path.dirname(__file__)
+    candidates = [
+        os.path.join(base_dir, "line_follow_params.json"),
+        os.path.abspath(os.path.join(base_dir, "..", "..", "..", "line_follow_params.json")),
+        "line_follow_params.json",
+    ]
+    for p in candidates:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+SHARED_CFG = _load_shared_cfg()
 
 # Core parameters migrated from CVpart/main/main1.py
-CAM_PITCH_DEG = 30.0
-CAM_HEIGHT_CM = 17.0
-CAM_VFOV_DEG = 52.0
-CAM_HFOV_DEG = 70.0
-ROW_DIST_MIN_CM = 6.0
-ROW_DIST_MAX_CM = 300.0
+CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
+CAM_HEIGHT_CM = float(_cfg_get(SHARED_CFG, "camera.height_cm", 17.0))
+CAM_VFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.vfov_deg", 52.0))
+CAM_HFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.hfov_deg", 70.0))
+ROW_DIST_MIN_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_min_cm", 6.0))
+ROW_DIST_MAX_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_max_cm", 300.0))
 
-TURN_START_DIST_CM = 42.0
-TURN_END_DIST_CM = 16.0
-TURN_ERR_CM = 3.5
+TURN_START_DIST_CM = float(_cfg_get(SHARED_CFG, "turn.start_dist_cm", 42.0))
+TURN_END_DIST_CM = float(_cfg_get(SHARED_CFG, "turn.end_dist_cm", 16.0))
+TURN_ERR_CM = float(_cfg_get(SHARED_CFG, "turn.err_cm", 3.5))
 
-# ROI ratios mapped from the original 160x120 settings.
-ROI_RATIOS = [
-    (0.0, 0.70, 1.0, 0.25, 0.20),  # near
-    (0.0, 0.45, 1.0, 0.23, 0.55),  # mid
-    (0.0, 0.20, 1.0, 0.20, 0.25),  # far
+BASE_FRAME_W = int(_cfg_get(SHARED_CFG, "base_frame.width", 160))
+BASE_FRAME_H = int(_cfg_get(SHARED_CFG, "base_frame.height", 120))
+_ROIS_DEFAULT = [
+    [0, 84, 160, 30, 0.20],
+    [0, 54, 160, 28, 0.55],
+    [0, 24, 160, 24, 0.25],
 ]
+_ROIS_PX = _cfg_get(SHARED_CFG, "roi.rois_px", _ROIS_DEFAULT)
+ROI_RATIOS = []
+for r in _ROIS_PX:
+    if not isinstance(r, (list, tuple)) or len(r) < 5:
+        continue
+    x, y, w, h, wt = r[0], r[1], r[2], r[3], r[4]
+    ROI_RATIOS.append((
+        float(x) / float(BASE_FRAME_W),
+        float(y) / float(BASE_FRAME_H),
+        float(w) / float(BASE_FRAME_W),
+        float(h) / float(BASE_FRAME_H),
+        float(wt),
+    ))
+if not ROI_RATIOS:
+    ROI_RATIOS = [
+        (0.0, 0.70, 1.0, 0.25, 0.20),
+        (0.0, 0.45, 1.0, 0.23, 0.55),
+        (0.0, 0.20, 1.0, 0.20, 0.25),
+    ]
 
-SCAN_LINES_PER_ROI = 5
-MIN_TRACK_WIDTH = 18
-MAX_TRACK_WIDTH = 145
+SCAN_LINES_PER_ROI = int(_cfg_get(SHARED_CFG, "roi.scan_lines_per_roi", 5))
+MIN_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_track_width", 18))
+MAX_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_track_width", 145))
 
-TH_OFFSET = 8
-TH_MIN = 25
-TH_MAX = 120
+TH_OFFSET = int(_cfg_get(SHARED_CFG, "threshold.offset", 8))
+TH_MIN = int(_cfg_get(SHARED_CFG, "threshold.min", 25))
+TH_MAX = int(_cfg_get(SHARED_CFG, "threshold.max", 120))
 
-MIN_VALID_LINES = 3
-WIDTH_STD_MAX = 14
-CONF_MIN = 0.25
-SMOOTH_ALPHA = 0.65
-CURVE_GAIN = 0.25
-ANGLE_GAIN = 0.22
-MIN_WEIGHT = 0.10
-LOOKAHEAD_GAIN = 0.35
+MIN_VALID_LINES = int(_cfg_get(SHARED_CFG, "roi.min_valid_lines", 3))
+WIDTH_STD_MAX = float(_cfg_get(SHARED_CFG, "roi.width_std_max", 14))
+CONF_MIN = float(_cfg_get(SHARED_CFG, "roi.conf_min", 0.25))
+SMOOTH_ALPHA = float(_cfg_get(SHARED_CFG, "fusion.smooth_alpha", 0.65))
+CURVE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.curve_gain", 0.25))
+ANGLE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.angle_gain", 0.22))
+MIN_WEIGHT = float(_cfg_get(SHARED_CFG, "fusion.min_weight", 0.10))
+LOOKAHEAD_GAIN = float(_cfg_get(SHARED_CFG, "fusion.lookahead_gain", 0.35))
 
-CURVE_SWITCH_CM = 4.5
-KP_STRAIGHT = 0.70
-KI_STRAIGHT = 0.015
-KD_STRAIGHT = 0.12
-KP_CURVE = 1.05
-KI_CURVE = 0.008
-KD_CURVE = 0.18
-I_CLAMP = 60.0
+CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
+KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
+KI_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.ki", 0.015))
+KD_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kd", 0.12))
+KP_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.kp", 1.05))
+KI_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.ki", 0.008))
+KD_CURVE = float(_cfg_get(SHARED_CFG, "pid.curve.kd", 0.18))
+I_CLAMP = float(_cfg_get(SHARED_CFG, "pid.i_clamp", 60.0))
 
-STEER_SAT = 70.0
-STEER_SCALE = 22.0
-LOST_HOLD_FRAMES = 6
-LOST_SEARCH_TURN = 26.0
+STEER_SAT = float(_cfg_get(SHARED_CFG, "steer.sat", 70.0))
+STEER_SCALE = float(_cfg_get(SHARED_CFG, "steer.scale", 22.0))
+LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
+LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 26.0))
 
-BASE_SPEED = 3.2
-STEER_TO_WHEEL = 0.040
+BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 3.2))
+STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.040))
+MAX_SPEED = float(_cfg_get(SHARED_CFG, "webots.max_speed", 6.28))
 
 
 def clamp(v, lo, hi):
@@ -343,7 +393,7 @@ state = {
     "last_print": -1.0,
 }
 
-max_speed = 6.28
+max_speed = MAX_SPEED
 print("line_follow_transfer: camera=%dx%d, timestep=%dms" % (img_w, img_h, timestep))
 
 while robot.step(timestep) != -1:
