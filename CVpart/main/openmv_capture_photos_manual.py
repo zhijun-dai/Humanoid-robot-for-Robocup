@@ -22,13 +22,54 @@ WARMUP_MS = 2000
 
 def ensure_dir(path):
     parts = [p for p in path.split("/") if p]
-    cur = ""
+    is_abs = path.startswith("/")
+    cur = "/" if is_abs else ""
     for p in parts:
-        cur += "/" + p
+        if is_abs:
+            if cur == "/":
+                cur = "/" + p
+            else:
+                cur = cur + "/" + p
+        else:
+            if cur:
+                cur = cur + "/" + p
+            else:
+                cur = p
         try:
             os.mkdir(cur)
         except OSError:
             pass
+
+
+def can_write(dir_path):
+    test_file = dir_path + "/.omv_write_test.tmp"
+    try:
+        f = open(test_file, "w")
+        f.write("ok")
+        f.close()
+        os.remove(test_file)
+        return True
+    except Exception:
+        return False
+
+
+def resolve_save_dir(user_path):
+    candidates = [user_path]
+    if not user_path.startswith("/"):
+        candidates.append("/flash/" + user_path)
+        candidates.append("/sd/" + user_path)
+
+    for d in candidates:
+        try:
+            ensure_dir(d)
+            if can_write(d):
+                return d
+        except Exception:
+            pass
+
+    raise OSError(
+        "No writable path. Set SAVE_DIR to '/flash/calib_photos_manual' or '/sd/calib_photos_manual'."
+    )
 
 
 def read_switch(sw):
@@ -52,8 +93,7 @@ sensor.skip_frames(time=WARMUP_MS)
 sensor.set_auto_gain(False)
 sensor.set_auto_whitebal(False)
 
-save_dir = SAVE_DIR
-ensure_dir(save_dir)
+save_dir = resolve_save_dir(SAVE_DIR)
 
 led_g = LED(2)
 led_b = LED(3)
