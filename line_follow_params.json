@@ -6,7 +6,7 @@
   },
   "camera": {
     "pitch_deg": 30.0,
-    "height_cm": 17.0,
+    "height_cm": 40.0,
     "vfov_deg": 52.0,
     "hfov_deg": 70.0,
     "row_dist_min_cm": 6.0,

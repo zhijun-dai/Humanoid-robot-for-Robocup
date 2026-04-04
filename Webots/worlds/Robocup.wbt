@@ -7,7 +7,10 @@ WorldInfo {
 }
 Viewpoint {
   orientation 0.11296748699958163 -0.9364569114406769 -0.3320945646890172 5.586303381668938
-  position -4.368190164875048 -0.9832413050426616 3.9446164078624895
+  position -1.6 -0.95 1.55
+  fieldOfView 0.55
+  follow "e-puck_main"
+  followType "Tracking Shot"
 }
 Floor {
   size 3.66 2.44
@@ -55,12 +58,14 @@ Solid {
   name "track_overlay"
 }
 E-puck {
+  name "e-puck_main"
   translation 0.30 -0.78 0.02
   rotation 0 0 1 0
   controller "line_follow_transfer"
   camera_width 320
   camera_height 240
   camera_fieldOfView 1.0
+  camera_rotation 0 1 0 0.523599
 }
 Background {
   skyColor [
