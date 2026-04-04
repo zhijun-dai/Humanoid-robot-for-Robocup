@@ -1,21 +1,163 @@
 {
-  "version": "v0.1",
-  "source": "competition_screenshot_and_repo_notes",
+  "version": "v0.2",
   "units": "mm",
+  "source": {
+    "primary": "dxf_out/2025人形竞技全能场地图纸.dxf",
+    "secondary": "competition_screenshot_and_repo_notes"
+  },
+  "dxf_metadata": {
+    "acadver": "AC1024",
+    "insunits_code": 4,
+    "insunits_name": "millimeter",
+    "extmin": [
+      1772.740453534907,
+      2419.102179691128,
+      -0.0000000000112498
+    ],
+    "extmax": [
+      5432.960737396454,
+      4859.486331262076,
+      0.0000000000002956
+    ]
+  },
   "field": {
     "width": 3660,
-    "height": 2440
+    "height": 2440,
+    "border_rect": {
+      "min": [
+        1772.877810431,
+        2419.412157625529
+      ],
+      "max": [
+        5432.877810430999,
+        4859.412157625528
+      ],
+      "vertices": [
+        [
+          1772.877810431,
+          2419.412157625529
+        ],
+        [
+          5432.877810430999,
+          2419.412157625529
+        ],
+        [
+          5432.877810430999,
+          4859.412157625528
+        ],
+        [
+          1772.877810431,
+          4859.412157625528
+        ]
+      ]
+    }
   },
   "track": {
     "length": 6140,
     "width": 350,
-    "direction": "counter_clockwise"
+    "direction": "counter_clockwise",
+    "width_verified_from_dxf": true,
+    "inner_boundary_lwpolyline": {
+      "closed": true,
+      "vertices": [
+        [
+          3612.599714233508,
+          3044.412157625529
+        ],
+        [
+          4192.877810430958,
+          3044.412157625529
+        ],
+        [
+          4192.877810430981,
+          4234.412157625529
+        ],
+        [
+          2992.877810431,
+          4234.412157625529
+        ],
+        [
+          2992.877810431001,
+          3044.412157625529
+        ],
+        [
+          3151.436112556846,
+          3044.412157625529
+        ]
+      ],
+      "bulges": [
+        1.0,
+        1.0,
+        0.2385270641482699
+      ]
+    },
+    "outer_boundary_lwpolyline": {
+      "closed": true,
+      "vertices": [
+        [
+          4192.877810431002,
+          4584.412157625528
+        ],
+        [
+          4192.877810431002,
+          2694.412157625529
+        ],
+        [
+          3641.228665825302,
+          2694.412157625529
+        ],
+        [
+          3165.753296394267,
+          2694.412157625529
+        ],
+        [
+          2992.877810431001,
+          2694.412157625529
+        ],
+        [
+          2992.877810431001,
+          4584.412157625528
+        ]
+      ],
+      "bulges": [
+        -1.0,
+        0.2331521658419853,
+        -1.0
+      ]
+    },
+    "distance_markers": [
+      0,
+      5,
+      10,
+      15,
+      20,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50,
+      55,
+      60
+    ]
   },
   "constraints": {
     "narrow_gate_min_width": 240
   },
   "elements": {
-    "start_line": null,
+    "start_line": {
+      "status": "pending_manual_confirmation",
+      "candidate_segment": [
+        [
+          4192.877810431002,
+          2694.412157625529
+        ],
+        [
+          4162.923912135048,
+          2694.412157625529
+        ]
+      ]
+    },
     "obstacle": {
       "type": "wood_strip",
       "size": null,
@@ -24,9 +166,9 @@
     "qr_slots": []
   },
   "validation": {
-    "status": "incomplete",
+    "status": "partial",
     "missing": [
-      "start_line_pose",
+      "start_line_final_pose",
       "obstacle_size_and_pose",
       "qr_slot_poses",
       "track_centerline_geometry"
