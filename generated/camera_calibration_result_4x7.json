@@ -1,0 +1,130 @@
+{
+  "timestamp": "2026-04-06T21:16:00",
+  "input": {
+    "images_pattern": "calib_photos_manual_0/*.jpg",
+    "images_total": 33,
+    "images_used": 33,
+    "images_failed": 0,
+    "board_inner_corners": {
+      "cols": 4,
+      "rows": 7
+    },
+    "square_size_mm": 34.0
+  },
+  "image_size": {
+    "width": 320,
+    "height": 240
+  },
+  "calibration": {
+    "model": "opencv_pinhole",
+    "rms_reprojection_error": 0.5903406158899143,
+    "mean_reprojection_error": 0.07978872085831515,
+    "camera_matrix": [
+      [
+        300.2074448179358,
+        0.0,
+        163.59588223452863
+      ],
+      [
+        0.0,
+        302.26399192669976,
+        103.02617876670712
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "dist_coeffs": [
+      -0.34436585198343006,
+      -0.7107972981185422,
+      0.002009331082640296,
+      0.003366728183466599,
+      2.173290505039695
+    ],
+    "intrinsics": {
+      "fx": 300.2074448179358,
+      "fy": 302.26399192669976,
+      "cx": 163.59588223452863,
+      "cy": 103.02617876670712
+    },
+    "fov_deg": {
+      "hfov": 56.1120899492866,
+      "vfov": 43.306546683905275
+    },
+    "per_image_reprojection_error": [
+      0.0603858911200313,
+      0.04212077626305548,
+      0.0515795920960205,
+      0.024555168843151814,
+      0.02954458048978687,
+      0.043193523724347684,
+      0.06965988574205216,
+      0.04905837918554761,
+      0.09608428152991842,
+      0.07455176249994948,
+      0.0679629268865267,
+      0.0775590563286787,
+      0.06996932962823117,
+      0.06708158551237652,
+      0.06660072940395537,
+      0.09607391438106795,
+      0.08259012442443793,
+      0.0364106243412141,
+      0.0344480790544753,
+      0.043067682732076014,
+      0.050627845839360974,
+      0.040830770482665944,
+      0.05572220700381856,
+      0.061281293808270805,
+      0.09512020475929517,
+      0.06634245633577601,
+      0.06612690879735239,
+      0.04591854444673833,
+      0.0907561349324644,
+      0.4924640131303389,
+      0.11648469672470252,
+      0.15551870533333204,
+      0.11333611254338308
+    ]
+  },
+  "images": {
+    "used": [
+      "calib_photos_manual_0\\img_002.jpg",
+      "calib_photos_manual_0\\img_003.jpg",
+      "calib_photos_manual_0\\img_004.jpg",
+      "calib_photos_manual_0\\img_005.jpg",
+      "calib_photos_manual_0\\img_006.jpg",
+      "calib_photos_manual_0\\img_007.jpg",
+      "calib_photos_manual_0\\img_008.jpg",
+      "calib_photos_manual_0\\img_009.jpg",
+      "calib_photos_manual_0\\img_012.jpg",
+      "calib_photos_manual_0\\img_014.jpg",
+      "calib_photos_manual_0\\img_015.jpg",
+      "calib_photos_manual_0\\img_018.jpg",
+      "calib_photos_manual_0\\img_019.jpg",
+      "calib_photos_manual_0\\img_020.jpg",
+      "calib_photos_manual_0\\img_022.jpg",
+      "calib_photos_manual_0\\img_023.jpg",
+      "calib_photos_manual_0\\img_024.jpg",
+      "calib_photos_manual_0\\img_025.jpg",
+      "calib_photos_manual_0\\img_026.jpg",
+      "calib_photos_manual_0\\img_028.jpg",
+      "calib_photos_manual_0\\img_030.jpg",
+      "calib_photos_manual_0\\img_031.jpg",
+      "calib_photos_manual_0\\img_033.jpg",
+      "calib_photos_manual_0\\img_034.jpg",
+      "calib_photos_manual_0\\img_035.jpg",
+      "calib_photos_manual_0\\img_036.jpg",
+      "calib_photos_manual_0\\img_038.jpg",
+      "calib_photos_manual_0\\img_039.jpg",
+      "calib_photos_manual_0\\img_040.jpg",
+      "calib_photos_manual_0\\img_041.jpg",
+      "calib_photos_manual_0\\img_042.jpg",
+      "calib_photos_manual_0\\img_043.jpg",
+      "calib_photos_manual_0\\img_046.jpg"
+    ],
+    "failed": []
+  }
+}

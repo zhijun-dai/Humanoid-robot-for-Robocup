@@ -64,7 +64,7 @@ E-puck {
   controller "line_follow_transfer"
   camera_width 320
   camera_height 240
-  camera_fieldOfView 1.0
+  camera_fieldOfView 0.9793406158899142
   camera_rotation 0 1 0 0.523599
 }
 Background {

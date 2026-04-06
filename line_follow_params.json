@@ -7,10 +7,31 @@
   "camera": {
     "pitch_deg": 30.0,
     "height_cm": 40.0,
-    "vfov_deg": 52.0,
-    "hfov_deg": 70.0,
+    "vfov_deg": 43.306546685324086,
+    "hfov_deg": 56.11208995137745,
     "row_dist_min_cm": 6.0,
-    "row_dist_max_cm": 300.0
+    "row_dist_max_cm": 300.0,
+    "calibration": {
+      "applied_at": "2026-04-06T21:18:19",
+      "source": "generated/camera_calibration_result_7x4.json",
+      "image_size": {
+        "width": 320,
+        "height": 240
+      },
+      "fx": 300.2074448047388,
+      "fy": 302.2639919157872,
+      "cx": 163.59588226355797,
+      "cy": 103.02617879821453,
+      "dist_coeffs": [
+        -0.3443658519844782,
+        -0.7107972991589404,
+        0.0020093310480857134,
+        0.003366728173328394,
+        2.173290511270469
+      ],
+      "rms_reprojection_error": 0.5903406158899142,
+      "mean_reprojection_error": 0.07978872085831515
+    }
   },
   "turn": {
     "start_dist_cm": 42.0,
@@ -19,9 +40,27 @@
   },
   "roi": {
     "rois_px": [
-      [0, 84, 160, 30, 0.2],
-      [0, 54, 160, 28, 0.55],
-      [0, 24, 160, 24, 0.25]
+      [
+        0,
+        84,
+        160,
+        30,
+        0.2
+      ],
+      [
+        0,
+        54,
+        160,
+        28,
+        0.55
+      ],
+      [
+        0,
+        24,
+        160,
+        24,
+        0.25
+      ]
     ],
     "scan_lines_per_roi": 5,
     "min_track_width": 18,
@@ -91,7 +130,7 @@
     "camera": {
       "width": 320,
       "height": 240,
-      "field_of_view": 1.0
+      "field_of_view": 0.9793406158899142
     }
   }
 }
