@@ -88,3 +88,31 @@ OpenMV IDE 运行脚本时默认会实时显示帧缓冲，看起来像“录视
 4. 用地面标尺做仿真与实机对齐验证。
 
 完成后，你的仿真相机和真实相机会明显更一致。
+
+## 5. OpenCV 标定脚本（已就绪）
+
+脚本 1：计算内参和畸变
+- scripts/calibrate_camera_opencv.py
+
+示例命令：
+
+python scripts/calibrate_camera_opencv.py --images "calib_photos/*.jpg" --cols 9 --rows 6 --square-size-mm 20 --output generated/camera_calibration_result.json --debug-dir generated/calib_debug
+
+输出内容：
+- camera_matrix（内参矩阵）
+- dist_coeffs（畸变参数）
+- fx/fy/cx/cy
+- hfov/vfov
+- 重投影误差（RMS 和每张误差）
+
+脚本 2：把结果写回 line_follow_params.json
+- scripts/apply_calibration_to_line_follow_params.py
+
+示例命令：
+
+python scripts/apply_calibration_to_line_follow_params.py --calib-json generated/camera_calibration_result.json --params-json line_follow_params.json
+
+该脚本会更新：
+- camera.hfov_deg
+- camera.vfov_deg
+- camera.calibration（保存 fx/fy/cx/cy、dist_coeffs、误差和来源）

@@ -9,6 +9,9 @@ PIXFORMAT = sensor.RGB565
 FRAMESIZE = sensor.QVGA
 MAX_IMAGES = 80
 JPEG_QUALITY = 95
+# 'run_once': capture exactly one image then exit (recommended for OpenMV IDE)
+# 'button_or_serial': keep running and capture on board button/serial Enter
+TRIGGER_MODE = "run_once"
 # Set one fixed save path here.
 # Examples:
 #   "calib_photos_manual"            -> save under current filesystem root/workdir
@@ -72,6 +75,25 @@ def resolve_save_dir(user_path):
     )
 
 
+def next_image_index(save_dir):
+    try:
+        names = os.listdir(save_dir)
+    except Exception:
+        return 0
+
+    idx = 0
+    while True:
+        target = "img_%03d.jpg" % idx
+        exists = False
+        for n in names:
+            if n == target:
+                exists = True
+                break
+        if not exists:
+            return idx
+        idx += 1
+
+
 def read_switch(sw):
     if sw is None:
         return False
@@ -107,48 +129,64 @@ except Exception:
 
 print("Manual capture start")
 print("save_dir:", save_dir)
-print("Trigger method:")
-print("1) Press board user button (if available)")
-print("2) Or press Enter in IDE terminal")
-print("3) Ctrl+C to stop")
 
-count = 0
-last_trigger_ms = time.ticks_ms()
-clock = time.clock()
+if TRIGGER_MODE == "run_once":
+    print("Mode: run_once")
+    idx = next_image_index(save_dir)
+    filename = "%s/img_%03d.jpg" % (save_dir, idx)
+    img = sensor.snapshot()
+    img.save(filename, quality=JPEG_QUALITY)
+    print("saved:", filename)
+    print("Done. Move target and click Run again for next photo.")
+    led_g.on()
+    time.sleep_ms(120)
+    led_g.off()
+else:
+    print("Mode: button_or_serial")
+    print("Trigger method:")
+    print("1) Press board user button (if available)")
+    print("2) Or press Enter in IDE terminal")
+    print("3) Ctrl+C to stop")
 
-while True:
-    clock.tick()
-    _ = sensor.snapshot()
+if TRIGGER_MODE != "run_once":
+    count = 0
+    last_trigger_ms = time.ticks_ms()
+    clock = time.clock()
 
-    now = time.ticks_ms()
-    trigger = False
+    while True:
+        clock.tick()
+        _ = sensor.snapshot()
 
-    if read_switch(sw):
-        trigger = True
+        now = time.ticks_ms()
+        trigger = False
 
-    if usb.any():
-        _ = usb.read()  # clear input buffer
-        trigger = True
+        if read_switch(sw):
+            trigger = True
 
-    if trigger and (time.ticks_diff(now, last_trigger_ms) >= DEBOUNCE_MS):
-        filename = "%s/img_%03d.jpg" % (save_dir, count)
-        img = sensor.snapshot()
-        img.save(filename, quality=JPEG_QUALITY)
-        print("saved:", filename)
+        if usb.any():
+            _ = usb.read()  # clear input buffer
+            trigger = True
 
-        led_g.on()
-        time.sleep_ms(80)
-        led_g.off()
+        if trigger and (time.ticks_diff(now, last_trigger_ms) >= DEBOUNCE_MS):
+            idx = next_image_index(save_dir)
+            filename = "%s/img_%03d.jpg" % (save_dir, idx)
+            img = sensor.snapshot()
+            img.save(filename, quality=JPEG_QUALITY)
+            print("saved:", filename)
 
-        count += 1
-        last_trigger_ms = now
+            led_g.on()
+            time.sleep_ms(80)
+            led_g.off()
 
-        if count >= MAX_IMAGES:
-            print("Reached MAX_IMAGES:", MAX_IMAGES)
-            break
+            count += 1
+            last_trigger_ms = now
 
-    if (count % 5) == 0:
-        led_b.toggle()
+            if count >= MAX_IMAGES:
+                print("Reached MAX_IMAGES:", MAX_IMAGES)
+                break
 
-print("Manual capture done, total:", count)
-print("FPS:", clock.fps())
+        if (count % 5) == 0:
+            led_b.toggle()
+
+    print("Manual capture done, total:", count)
+    print("FPS:", clock.fps())
