@@ -104,6 +104,7 @@ LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 26.0))
 BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 3.2))
 STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.040))
 MAX_SPEED = float(_cfg_get(SHARED_CFG, "webots.max_speed", 6.28))
+CAMERA_DEVICE_NAME = str(_cfg_get(SHARED_CFG, "webots.camera.device_name", "camera_ext"))
 
 
 def clamp(v, lo, hi):
@@ -367,7 +368,20 @@ def pid_step(err, far_err_cm, dt, state, curve_force=False):
 robot = Robot()
 timestep = int(robot.getBasicTimeStep())
 
-camera = robot.getDevice("camera")
+try:
+    camera = robot.getDevice(CAMERA_DEVICE_NAME)
+except Exception:
+    camera = None
+
+if camera is None and CAMERA_DEVICE_NAME != "camera":
+    try:
+        camera = robot.getDevice("camera")
+    except Exception:
+        camera = None
+
+if camera is None:
+    raise RuntimeError("No camera device found. Checked: %s, camera" % CAMERA_DEVICE_NAME)
+
 camera.enable(timestep)
 
 left_motor = robot.getDevice("left wheel motor")

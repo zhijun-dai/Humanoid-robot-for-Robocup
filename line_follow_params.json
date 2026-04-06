@@ -127,7 +127,9 @@
   "webots": {
     "base_speed": 3.2,
     "steer_to_wheel": 0.04,
+    "camera_mount_height_cm": 40.0,
     "camera": {
+      "device_name": "camera_ext",
       "width": 320,
       "height": 240,
       "field_of_view": 0.9793406158899142
