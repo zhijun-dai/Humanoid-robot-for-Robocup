@@ -77,10 +77,6 @@ E-puck {
       ]
     }
   ]
-  camera_width 320
-  camera_height 240
-  camera_fieldOfView 0.9793406158899142
-  camera_rotation 0 1 0 0.5235987755982988
 }
 Background {
   skyColor [

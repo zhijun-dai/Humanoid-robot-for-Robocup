@@ -116,3 +116,29 @@ python scripts/apply_calibration_to_line_follow_params.py --calib-json generated
 - camera.hfov_deg
 - camera.vfov_deg
 - camera.calibration（保存 fx/fy/cx/cy、dist_coeffs、误差和来源）
+
+## 6. Webots 自动调参（黑箱搜索）
+
+脚本：
+- scripts/auto_tune_webots_params.py
+
+作用：
+- 自动采样一组参数
+- 运行 Webots 一小段时间
+- 从控制器日志里提取偏差/丢线/转向饱和指标
+- 计算综合分数并选最优参数
+
+示例命令（先只评估，不覆盖原参数）：
+
+python scripts/auto_tune_webots_params.py --trials 24 --run-seconds 16 --webots-cmd "webots --batch --mode=fast --stdout --stderr \"{world}\""
+
+示例命令（评估后自动应用最优参数）：
+
+python scripts/auto_tune_webots_params.py --trials 24 --run-seconds 16 --webots-cmd "webots --batch --mode=fast --stdout --stderr \"{world}\"" --apply-best
+
+输出：
+- generated/auto_tune_result.json（每轮分数、最优参数、Top5）
+
+备注：
+- 该脚本依赖控制器周期日志（th/steer/ex/lost/conf 等字段）进行评分。
+- 如果本机 Webots 命令行参数和示例不同，替换 --webots-cmd 即可。

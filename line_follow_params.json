@@ -34,9 +34,9 @@
     }
   },
   "turn": {
-    "start_dist_cm": 42.0,
+    "start_dist_cm": 34.0,
     "end_dist_cm": 16.0,
-    "err_cm": 3.5
+    "err_cm": 6.0
   },
   "roi": {
     "rois_px": [
@@ -52,14 +52,14 @@
         54,
         160,
         28,
-        0.55
+        0.6
       ],
       [
         0,
         24,
         160,
         24,
-        0.25
+        0.18
       ]
     ],
     "scan_lines_per_roi": 5,
@@ -83,33 +83,33 @@
   },
   "fusion": {
     "smooth_alpha": 0.65,
-    "curve_gain": 0.25,
-    "angle_gain": 0.22,
+    "curve_gain": 0.14,
+    "angle_gain": 0.15,
     "min_weight": 0.1,
-    "lookahead_gain": 0.35
+    "lookahead_gain": 0.18
   },
   "pid": {
-    "curve_switch_cm": 4.5,
+    "curve_switch_cm": 6.5,
     "straight": {
       "kp": 0.7,
       "ki": 0.015,
       "kd": 0.12
     },
     "curve": {
-      "kp": 1.05,
-      "ki": 0.008,
-      "kd": 0.18
+      "kp": 0.78,
+      "ki": 0.005,
+      "kd": 0.12
     },
     "i_clamp": 60.0
   },
   "steer": {
-    "sat": 70.0,
-    "scale": 22.0,
+    "sat": 48.0,
+    "scale": 30.0,
     "deadband": 6.0
   },
   "lost": {
     "hold_frames": 6,
-    "search_turn": 26.0
+    "search_turn": 18.0
   },
   "output": {
     "send_interval_ms": 70,
@@ -125,8 +125,8 @@
     }
   },
   "webots": {
-    "base_speed": 3.2,
-    "steer_to_wheel": 0.04,
+    "base_speed": 2.7,
+    "steer_to_wheel": 0.025,
     "camera_mount_height_cm": 40.0,
     "camera": {
       "device_name": "camera_ext",

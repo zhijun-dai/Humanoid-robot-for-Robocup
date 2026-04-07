@@ -373,14 +373,8 @@ try:
 except Exception:
     camera = None
 
-if camera is None and CAMERA_DEVICE_NAME != "camera":
-    try:
-        camera = robot.getDevice("camera")
-    except Exception:
-        camera = None
-
 if camera is None:
-    raise RuntimeError("No camera device found. Checked: %s, camera" % CAMERA_DEVICE_NAME)
+    raise RuntimeError("No camera device found: %s" % CAMERA_DEVICE_NAME)
 
 camera.enable(timestep)
 
