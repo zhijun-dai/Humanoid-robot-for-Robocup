@@ -1,0 +1,25 @@
+{
+  "logs_glob": "generated/auto_tune_logs*/trial_*.log",
+  "log_files": 5,
+  "samples": 1844,
+  "metrics": {
+    "samples": 1844.0,
+    "lost_ratio": 0.93058568329718,
+    "valid_ratio": 0.06941431670281996,
+    "mean_abs_ex": 11.48484375,
+    "mean_abs_ang": 24.91875,
+    "mean_conf": 0.04158351409978308,
+    "mean_tg": 0.0
+  },
+  "recommended": {
+    "roi.min_valid_lines": 2,
+    "roi.conf_min": 0.085,
+    "roi.width_std_max": 26.0,
+    "roi.min_line_width": 1,
+    "roi.max_line_width": 110,
+    "webots.base_speed": 1.8,
+    "lost.search_turn": 10.12,
+    "fusion.lookahead_gain": 0.113
+  },
+  "applied": false
+}

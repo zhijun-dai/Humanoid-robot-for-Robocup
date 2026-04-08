@@ -71,21 +71,24 @@ if not ROI_RATIOS:
     ]
 
 SCAN_LINES_PER_ROI = int(_cfg_get(SHARED_CFG, "roi.scan_lines_per_roi", 5))
-MIN_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_track_width", 18))
-MAX_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_track_width", 145))
+MIN_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_track_width", 12))
+MAX_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_track_width", 220))
 
 TH_OFFSET = int(_cfg_get(SHARED_CFG, "threshold.offset", 8))
 TH_MIN = int(_cfg_get(SHARED_CFG, "threshold.min", 25))
 TH_MAX = int(_cfg_get(SHARED_CFG, "threshold.max", 120))
 
-MIN_VALID_LINES = int(_cfg_get(SHARED_CFG, "roi.min_valid_lines", 3))
+MIN_VALID_LINES = int(_cfg_get(SHARED_CFG, "roi.min_valid_lines", 2))
 WIDTH_STD_MAX = float(_cfg_get(SHARED_CFG, "roi.width_std_max", 14))
-CONF_MIN = float(_cfg_get(SHARED_CFG, "roi.conf_min", 0.25))
+CONF_MIN = float(_cfg_get(SHARED_CFG, "roi.conf_min", 0.12))
 SMOOTH_ALPHA = float(_cfg_get(SHARED_CFG, "fusion.smooth_alpha", 0.65))
 CURVE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.curve_gain", 0.25))
 ANGLE_GAIN = float(_cfg_get(SHARED_CFG, "fusion.angle_gain", 0.22))
 MIN_WEIGHT = float(_cfg_get(SHARED_CFG, "fusion.min_weight", 0.10))
 LOOKAHEAD_GAIN = float(_cfg_get(SHARED_CFG, "fusion.lookahead_gain", 0.35))
+TRACK_COLOR_MODE = str(_cfg_get(SHARED_CFG, "threshold.track_color", "auto")).lower()
+MIN_LINE_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_line_width", 2))
+MAX_LINE_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_line_width", 80))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
@@ -100,6 +103,7 @@ STEER_SAT = float(_cfg_get(SHARED_CFG, "steer.sat", 70.0))
 STEER_SCALE = float(_cfg_get(SHARED_CFG, "steer.scale", 22.0))
 LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
 LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 26.0))
+LOST_PREFER_LEFT = bool(_cfg_get(SHARED_CFG, "lost.prefer_left", True))
 
 BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 3.2))
 STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.040))
@@ -269,6 +273,31 @@ def px_to_ground_cm(x, y, img_h, img_cx, row_cm_per_px, row_distance_cm):
 
 
 def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w):
+    # Prefer center-out search to lock onto the nearest lane boundaries.
+    mid = (x0 + x1) // 2
+
+    left = -1
+    x = mid
+    while x >= x0:
+        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
+            left = x
+            break
+        x -= 1
+
+    right = -1
+    x = mid
+    while x <= x1:
+        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
+            right = x
+            break
+        x += 1
+
+    if left >= 0 and right >= 0:
+        width = right - left
+        if MIN_TRACK_WIDTH <= width <= MAX_TRACK_WIDTH:
+            return left, right
+
+    # Fallback: whole-row search keeps compatibility with old behavior.
     left = -1
     right = -1
 
@@ -295,12 +324,89 @@ def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w):
     return left, right
 
 
-def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm):
+def detect_track_is_dark(raw, w, h, black_th):
+    if TRACK_COLOR_MODE == "dark":
+        return True
+    if TRACK_COLOR_MODE == "light":
+        return False
+
+    dark = 0
+    light = 0
+    step_y = max(1, h // 20)
+    step_x = max(1, w // 20)
+
+    y = 0
+    while y < h:
+        x = 0
+        while x < w:
+            g = grayscale_from_bgra(raw, w, x, y)
+            if g <= black_th:
+                dark += 1
+            else:
+                light += 1
+            x += step_x
+        y += step_y
+
+    # Track line is usually the minority class in the full frame.
+    return dark <= light
+
+
+def pixel_is_track(g, black_th, track_is_dark):
+    if track_is_dark:
+        return g <= black_th
+    return g >= black_th
+
+
+def find_single_line_center_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark, hint_x):
+    runs = []
+
+    in_run = False
+    run_start = x0
+    x = x0
+    while x <= x1:
+        g = grayscale_from_bgra(raw, img_w, x, y)
+        is_track = pixel_is_track(g, black_th, track_is_dark)
+
+        if is_track and not in_run:
+            in_run = True
+            run_start = x
+        elif (not is_track) and in_run:
+            run_end = x - 1
+            run_w = run_end - run_start + 1
+            if MIN_LINE_WIDTH <= run_w <= MAX_LINE_WIDTH:
+                center = 0.5 * (run_start + run_end)
+                runs.append((center, run_w))
+            in_run = False
+        x += 1
+
+    if in_run:
+        run_end = x1
+        run_w = run_end - run_start + 1
+        if MIN_LINE_WIDTH <= run_w <= MAX_LINE_WIDTH:
+            center = 0.5 * (run_start + run_end)
+            runs.append((center, run_w))
+
+    if not runs:
+        return None
+
+    best = runs[0]
+    best_score = abs(best[0] - hint_x)
+    for r in runs[1:]:
+        score = abs(r[0] - hint_x)
+        if score < best_score:
+            best = r
+            best_score = score
+
+    return best
+
+
+def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x):
     x, y, w, h, weight = roi
     x0 = x
     x1 = x + w - 1
 
     centers_cm = []
+    centers_px = []
     widths = []
     ys = []
     zs_cm = []
@@ -310,26 +416,29 @@ def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_dis
         step = 1
 
     i = 1
+    last_x = hint_x
     while i <= SCAN_LINES_PER_ROI:
         sy = y + i * step
         if sy >= img_h:
             sy = img_h - 1
 
-        lr = find_lr_edges_on_row(raw, sy, x0, x1, black_th, img_w)
-        if lr is not None:
-            l, r = lr
-            center_px = 0.5 * (l + r)
+        one = find_single_line_center_on_row(raw, sy, x0, x1, black_th, img_w, track_is_dark, last_x)
+        if one is not None:
+            center_px, run_w = one
             x_cm, z_cm = px_to_ground_cm(center_px, sy, img_h, img_cx, row_cm_per_px, row_distance_cm)
             centers_cm.append(x_cm)
+            centers_px.append(center_px)
             zs_cm.append(z_cm)
-            widths.append(r - l)
+            widths.append(run_w)
             ys.append(sy)
+            last_x = center_px
         i += 1
 
     if len(centers_cm) < MIN_VALID_LINES:
         return None
 
     center_cm = median(centers_cm)
+    center_px = median(centers_px)
     dist_cm = median(zs_cm)
     width_std = stdev(widths)
     conf = (len(centers_cm) / float(SCAN_LINES_PER_ROI)) * (1.0 - clamp(width_std / WIDTH_STD_MAX, 0.0, 1.0))
@@ -339,6 +448,7 @@ def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_dis
 
     return {
         "center_cm": center_cm,
+        "center_px": center_px,
         "dist_cm": dist_cm,
         "weight": weight,
         "angle": angle,
@@ -350,8 +460,8 @@ def nonlinear_map(v):
     return STEER_SAT * math.tanh(v / STEER_SCALE)
 
 
-def pid_step(err, far_err_cm, dt, state, curve_force=False):
-    if (not curve_force) and (abs(far_err_cm) < CURVE_SWITCH_CM):
+def pid_step(err, dt, state, curve_mode=False):
+    if not curve_mode:
         kp, ki, kd = KP_STRAIGHT, KI_STRAIGHT, KD_STRAIGHT
     else:
         kp, ki, kd = KP_CURVE, KI_CURVE, KD_CURVE
@@ -399,6 +509,11 @@ state = {
     "smoothed_err": 0.0,
     "lost_frames": 0,
     "last_print": -1.0,
+    "last_base_err": 0.0,
+    "last_angle_err": 0.0,
+    "last_far_dist": 0.0,
+    "last_line_x": float(img_cx),
+    "track_dark_score": 0,
 }
 
 max_speed = MAX_SPEED
@@ -410,10 +525,27 @@ while robot.step(timestep) != -1:
         continue
 
     black_th = clamp(otsu_threshold(raw, img_w, img_h) + TH_OFFSET, TH_MIN, TH_MAX)
+    track_dark_candidate = detect_track_is_dark(raw, img_w, img_h, black_th)
+    if track_dark_candidate:
+        state["track_dark_score"] = int(clamp(state["track_dark_score"] + 1, -6, 6))
+    else:
+        state["track_dark_score"] = int(clamp(state["track_dark_score"] - 1, -6, 6))
+    track_is_dark = state["track_dark_score"] >= 0
 
     roi_results = []
     for roi in rois:
-        res = roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm)
+        res = roi_midline(
+            raw,
+            roi,
+            black_th,
+            img_w,
+            img_h,
+            img_cx,
+            row_cm_per_px,
+            row_distance_cm,
+            track_is_dark,
+            state["last_line_x"],
+        )
         if res is not None and res["conf"] >= CONF_MIN:
             roi_results.append(res)
 
@@ -426,65 +558,78 @@ while robot.step(timestep) != -1:
     avg_conf = 0.0
 
     if roi_results:
-        state["lost_frames"] = 0
-
-        weighted_sum = 0.0
-        weight_total = 0.0
-        weight_nominal = 0.0
-        angle_sum = 0.0
-        angle_weight = 0.0
-
+        score_total = 0.0
         for r in roi_results:
-            err = r["center_cm"]
-            w = r["weight"] * r["conf"]
-            weighted_sum += err * w
-            weight_total += w
-            weight_nominal += r["weight"]
-            angle_sum += r["angle"] * w
-            angle_weight += w
-
-        if weight_total <= MIN_WEIGHT:
+            score_total += r["weight"] * r["conf"]
+        if score_total <= MIN_WEIGHT:
             roi_results = []
 
     if roi_results:
-        far = roi_results[-1]
-        near = roi_results[0]
-        far_err_cm = far["center_cm"]
+        state["lost_frames"] = 0
+
+        near = min(roi_results, key=lambda r: r["dist_cm"])
+        far = max(roi_results, key=lambda r: r["dist_cm"])
+
         near_err_cm = near["center_cm"]
+        far_err_cm = far["center_cm"]
         far_dist_cm = far["dist_cm"]
+        state["last_line_x"] = clamp(float(near["center_px"]), 0.0, float(img_w - 1))
 
-        base_err_cm = weighted_sum / weight_total
-        angle_err = angle_sum / angle_weight if angle_weight > 0 else 0.0
-        avg_conf = (weight_total / weight_nominal) if weight_nominal > 0 else 0.0
+        base_err_cm = near_err_cm
         curve_err = far_err_cm - near_err_cm
+        angle_err = 0.5 * (near["angle"] + far["angle"])
+        avg_conf = sum(r["conf"] for r in roi_results) / float(len(roi_results))
 
-        dist_norm = clamp((TURN_START_DIST_CM - far_dist_cm) / (TURN_START_DIST_CM - TURN_END_DIST_CM), 0.0, 1.0)
-        err_norm = clamp(abs(far_err_cm) / TURN_ERR_CM, 0.0, 1.0)
-        turn_gate = dist_norm * err_norm
-        lookahead_gain_dyn = LOOKAHEAD_GAIN * (0.70 + 0.90 * turn_gate)
-        curve_mode_force = (turn_gate > 0.35) or (abs(curve_err) > CURVE_SWITCH_CM)
+        dist_norm = clamp((TURN_START_DIST_CM - far_dist_cm) / max((TURN_START_DIST_CM - TURN_END_DIST_CM), 1.0), 0.0, 1.0)
+        curve_norm = clamp(abs(curve_err) / max(CURVE_SWITCH_CM, 1.0), 0.0, 1.0)
+        offset_norm = clamp(abs(base_err_cm) / max(TURN_ERR_CM, 1.0), 0.0, 1.0)
+        turn_gate = max(dist_norm * curve_norm, offset_norm * 0.8)
+        curve_mode_force = (turn_gate > 0.45) or (curve_norm > 0.9)
         curve_mode = 1 if curve_mode_force else 0
 
+        lookahead_gain_dyn = LOOKAHEAD_GAIN * (0.85 + 0.55 * turn_gate)
         fused_err = base_err_cm
-        fused_err += lookahead_gain_dyn * far_err_cm
+        fused_err += lookahead_gain_dyn * curve_err
         fused_err += CURVE_GAIN * curve_err
         fused_err += ANGLE_GAIN * angle_err
+        # Straight-first: when curve evidence is weak, suppress lookahead aggression.
+        if curve_norm < 0.35 and abs(angle_err) < 12.0:
+            fused_err = 0.85 * base_err_cm + 0.15 * fused_err
 
         state["smoothed_err"] = SMOOTH_ALPHA * state["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
         dt = timestep / 1000.0
-        pid_out = pid_step(state["smoothed_err"], far_err_cm, dt, state, curve_mode_force)
+        pid_out = pid_step(state["smoothed_err"], dt, state, curve_mode_force)
         steer = nonlinear_map(pid_out)
         state["last_steer"] = steer
+
+        state["last_base_err"] = base_err_cm
+        state["last_angle_err"] = angle_err
+        state["last_far_dist"] = far_dist_cm
     else:
         state["lost_frames"] += 1
+        base_err_cm = state["last_base_err"]
+        angle_err = state["last_angle_err"]
+        far_dist_cm = state["last_far_dist"]
+        avg_conf = 0.0
+        turn_gate = 1.0
+        curve_mode = 1
         if state["lost_frames"] <= LOST_HOLD_FRAMES:
-            steer = state["last_steer"] * 0.85
+            steer = state["last_steer"] * 0.70
         else:
-            steer = LOST_SEARCH_TURN if state["last_steer"] >= 0 else -LOST_SEARCH_TURN
+            if abs(state["last_steer"]) < 1.0:
+                search_sign = 1.0 if LOST_PREFER_LEFT else -1.0
+            else:
+                search_sign = 1.0 if state["last_steer"] >= 0 else -1.0
+            steer = search_sign * LOST_SEARCH_TURN
+
+    speed_scale = 1.0 - 0.45 * turn_gate
+    if state["lost_frames"] > 0:
+        speed_scale *= 0.75
+    target_base_speed = clamp(BASE_SPEED * speed_scale, 0.6, BASE_SPEED)
 
     delta = clamp(steer * STEER_TO_WHEEL, -2.8, 2.8)
-    left_speed = clamp(BASE_SPEED - delta, -max_speed, max_speed)
-    right_speed = clamp(BASE_SPEED + delta, -max_speed, max_speed)
+    left_speed = clamp(target_base_speed - delta, -max_speed, max_speed)
+    right_speed = clamp(target_base_speed + delta, -max_speed, max_speed)
 
     left_motor.setVelocity(left_speed)
     right_motor.setVelocity(right_speed)

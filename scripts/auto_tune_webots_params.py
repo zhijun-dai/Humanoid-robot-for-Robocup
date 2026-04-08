@@ -25,6 +25,7 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -50,8 +51,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--params-json", default="line_follow_params.json")
     parser.add_argument("--world", default="Webots/worlds/Robocup.wbt")
     parser.add_argument(
+        "--webots-exe",
+        default="",
+        help="Absolute path to webots executable (e.g. D:/Webots/.../webots.exe).",
+    )
+    parser.add_argument(
         "--webots-cmd",
-        default='webots --batch --mode=fast --stdout --stderr "{world}"',
+        default="",
         help="Command template. Must include {world} placeholder.",
     )
     parser.add_argument("--trials", type=int, default=24)
@@ -227,6 +233,38 @@ def write_json(path: str, data: Dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+def resolve_webots_cmd(webots_cmd: str, webots_exe: str) -> str:
+    if webots_cmd:
+        return webots_cmd
+
+    if webots_exe:
+        exe = os.path.abspath(webots_exe)
+        if os.path.isfile(exe):
+            return f'"{exe}" --batch --mode=fast --stdout --stderr "{{world}}"'
+        print("[WARN] --webots-exe not found:", exe)
+
+    candidates: List[str] = []
+    which_webots = shutil.which("webots")
+    if which_webots:
+        candidates.append(which_webots)
+
+    # Common Windows install locations for Webots.
+    candidates.extend(
+        [
+            r"D:\Webots\msys64\mingw64\bin\webots.exe",
+            r"C:\Program Files\Webots\msys64\mingw64\bin\webots.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Webots\msys64\mingw64\bin\webots.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Cyberbotics\Webots\msys64\mingw64\bin\webots.exe"),
+        ]
+    )
+
+    for exe in candidates:
+        if exe and os.path.isfile(exe):
+            return f'"{exe}" --batch --mode=fast --stdout --stderr "{{world}}"'
+
+    return 'webots --batch --mode=fast --stdout --stderr "{world}"'
+
+
 def main() -> int:
     args = parse_args()
     rng = random.Random(args.seed)
@@ -241,9 +279,11 @@ def main() -> int:
     if not os.path.isfile(world_path):
         print("[ERROR] world file not found:", world_path)
         return 3
-    if "{world}" not in args.webots_cmd:
+    resolved_webots_cmd = resolve_webots_cmd(args.webots_cmd, args.webots_exe)
+    if "{world}" not in resolved_webots_cmd:
         print("[ERROR] --webots-cmd must contain {world} placeholder")
         return 4
+    print("[INFO] webots command:", resolved_webots_cmd)
 
     with open(params_path, "r", encoding="utf-8") as f:
         base_params = json.load(f)
@@ -275,7 +315,7 @@ def main() -> int:
             with open(params_path, "w", encoding="utf-8") as f:
                 json.dump(candidate, f, indent=2, ensure_ascii=False)
 
-            command = args.webots_cmd.format(world=world_path)
+            command = resolved_webots_cmd.format(world=world_path)
             log_text, timed_out, return_code = run_webots(command, repo_root, args.run_seconds)
             records = parse_telemetry(log_text)
 
@@ -299,13 +339,15 @@ def main() -> int:
                 with open(log_path, "w", encoding="utf-8") as f:
                     f.write(log_text)
 
-            if score < best_score:
+            # Webots batch may still return non-zero while producing valid telemetry.
+            is_valid = int(metrics["samples"]) >= args.min_samples
+            if is_valid and score < best_score:
                 best_score = score
                 best_idx = trial
                 best_params = copy.deepcopy(candidate)
 
             print(
-                f"[TRIAL {trial:02d}] score={score:.4f}, samples={int(metrics['samples'])}, "
+                f"[TRIAL {trial:02d}] score={score:.4f}, rc={return_code}, samples={int(metrics['samples'])}, "
                 f"mean_abs_ex={metrics['mean_abs_ex_cm']:.3f}, lost_ratio={metrics['lost_ratio']:.3f}"
             )
 
@@ -318,7 +360,24 @@ def main() -> int:
                 f.write(backup_text)
 
     if best_idx < 0:
+        ranked = sorted(trial_results, key=lambda x: x["score"])[:5]
+        summary = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "trials": args.trials,
+            "run_seconds": args.run_seconds,
+            "params_json": args.params_json,
+            "world": args.world,
+            "webots_cmd": resolved_webots_cmd,
+            "apply_best": args.apply_best,
+            "best_trial": None,
+            "top5": ranked,
+            "all_trials": trial_results,
+            "error": "No valid trial result (insufficient telemetry samples)",
+        }
+        output_path = os.path.join(repo_root, args.output)
+        write_json(output_path, summary)
         print("[ERROR] No valid trial result")
+        print("  output:", args.output)
         return 5
 
     ranked = sorted(trial_results, key=lambda x: x["score"])[:5]
@@ -329,7 +388,7 @@ def main() -> int:
         "run_seconds": args.run_seconds,
         "params_json": args.params_json,
         "world": args.world,
-        "webots_cmd": args.webots_cmd,
+        "webots_cmd": resolved_webots_cmd,
         "apply_best": args.apply_best,
         "best_trial": trial_results[best_idx],
         "top5": ranked,

@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-04-07T20:43:10",
+  "trials": 1,
+  "run_seconds": 12,
+  "params_json": "line_follow_params.json",
+  "world": "Webots/worlds/Robocup.wbt",
+  "webots_cmd": "\"D:\\Webots\\msys64\\mingw64\\bin\\webots.exe\" --batch --mode=fast --stdout --stderr \"{world}\"",
+  "apply_best": false,
+  "best_trial": null,
+  "top5": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": true,
+      "return_code": 1,
+      "score": 55.401861540155764,
+      "metrics": {
+        "samples": 995.0,
+        "mean_abs_ex_cm": 0.16274371859296483,
+        "p95_abs_ex_cm": 0.0,
+        "mean_abs_ang_deg": 0.6507537688442211,
+        "steer_rms": 18.87121015897819,
+        "lost_ratio": 0.985929648241206,
+        "saturation_ratio": 0.0010050251256281408,
+        "conf_mean": 0.008723618090452261
+      },
+      "params": {
+        "turn.start_dist_cm": 34.0,
+        "turn.err_cm": 6.0,
+        "fusion.lookahead_gain": 0.18,
+        "fusion.curve_gain": 0.14,
+        "fusion.angle_gain": 0.15,
+        "pid.curve_switch_cm": 6.5,
+        "pid.curve.kp": 0.78,
+        "pid.curve.ki": 0.005,
+        "pid.curve.kd": 0.12,
+        "steer.sat": 48.0,
+        "steer.scale": 30.0,
+        "webots.base_speed": 2.7,
+        "webots.steer_to_wheel": 0.025,
+        "lost.search_turn": 18.0
+      }
+    }
+  ],
+  "all_trials": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": true,
+      "return_code": 1,
+      "score": 55.401861540155764,
+      "metrics": {
+        "samples": 995.0,
+        "mean_abs_ex_cm": 0.16274371859296483,
+        "p95_abs_ex_cm": 0.0,
+        "mean_abs_ang_deg": 0.6507537688442211,
+        "steer_rms": 18.87121015897819,
+        "lost_ratio": 0.985929648241206,
+        "saturation_ratio": 0.0010050251256281408,
+        "conf_mean": 0.008723618090452261
+      },
+      "params": {
+        "turn.start_dist_cm": 34.0,
+        "turn.err_cm": 6.0,
+        "fusion.lookahead_gain": 0.18,
+        "fusion.curve_gain": 0.14,
+        "fusion.angle_gain": 0.15,
+        "pid.curve_switch_cm": 6.5,
+        "pid.curve.kp": 0.78,
+        "pid.curve.ki": 0.005,
+        "pid.curve.kd": 0.12,
+        "steer.sat": 48.0,
+        "steer.scale": 30.0,
+        "webots.base_speed": 2.7,
+        "webots.steer_to_wheel": 0.025,
+        "lost.search_turn": 18.0
+      }
+    }
+  ],
+  "error": "No valid trial result (non-zero return code or insufficient samples)"
+}
