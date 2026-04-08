@@ -95,6 +95,16 @@ MAX_LINE_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_line_width", 80))
 LANE_WIDTH_INIT_PX = float(_cfg_get(SHARED_CFG, "roi.lane_width_init_px", 70.0))
 LANE_WIDTH_TOL_PX = float(_cfg_get(SHARED_CFG, "roi.lane_width_tol_px", 40.0))
 MAX_CENTER_JUMP_PX = float(_cfg_get(SHARED_CFG, "roi.max_center_jump_px", 55.0))
+SIMPLE_BOTTOM_MODE = bool(_cfg_get(SHARED_CFG, "roi.simple_bottom_mode", True))
+BOTTOM_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.bottom_start_ratio", 0.75))
+BOTTOM_ROWS = int(_cfg_get(SHARED_CFG, "roi.bottom_rows", 14))
+BOTTOM_STEP = int(_cfg_get(SHARED_CFG, "roi.bottom_step", 2))
+SINGLE_LINE_CONF = float(_cfg_get(SHARED_CFG, "roi.single_line_conf", 0.35))
+ASSIST_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.assist_enable", True))
+ASSIST_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.assist_start_ratio", 0.50))
+ASSIST_END_RATIO = float(_cfg_get(SHARED_CFG, "roi.assist_end_ratio", 0.75))
+ASSIST_ROWS = int(_cfg_get(SHARED_CFG, "roi.assist_rows", 12))
+ASSIST_STEP = int(_cfg_get(SHARED_CFG, "roi.assist_step", 2))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
@@ -123,6 +133,8 @@ PIX_CURVE_GAIN = float(_cfg_get(SHARED_CFG, "webots.pixel_curve_gain", 0.0))
 PIX_ANGLE_GAIN = float(_cfg_get(SHARED_CFG, "webots.pixel_angle_gain", 0.06))
 CURVE_SWITCH_PX = float(_cfg_get(SHARED_CFG, "webots.curve_switch_px", 18.0))
 RIGHT_TURN_SCALE = float(_cfg_get(SHARED_CFG, "webots.right_turn_scale", 0.65))
+LEFT_CURVE_OUTWARD_GAIN = float(_cfg_get(SHARED_CFG, "webots.left_curve_outward_gain", 0.35))
+LEFT_CURVE_OUTWARD_PX = float(_cfg_get(SHARED_CFG, "webots.left_curve_outward_px", 6.0))
 CAMERA_DEVICE_NAME = str(_cfg_get(SHARED_CFG, "webots.camera.device_name", "camera_ext"))
 
 
@@ -413,6 +425,239 @@ def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark, hint_x,
     return best
 
 
+def collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark):
+    runs = []
+    run_start = -1
+    x = x0
+    while x <= x1:
+        g = grayscale_from_bgra(raw, img_w, x, y)
+        is_track = pixel_is_track(g, black_th, track_is_dark)
+        if is_track and run_start < 0:
+            run_start = x
+        elif (not is_track) and run_start >= 0:
+            run_end = x - 1
+            w = run_end - run_start + 1
+            if w >= MIN_LINE_WIDTH and w <= MAX_LINE_WIDTH:
+                runs.append((run_start, run_end))
+            run_start = -1
+        x += 1
+    if run_start >= 0:
+        run_end = x1
+        w = run_end - run_start + 1
+        if w >= MIN_LINE_WIDTH and w <= MAX_LINE_WIDTH:
+            runs.append((run_start, run_end))
+    return runs
+
+
+def choose_pair_center_from_runs(runs, hint_center, lane_width_hint, x0, x1):
+    if len(runs) < 2:
+        return None
+
+    best = None
+    best_score = 1e9
+    i = 0
+    while i < len(runs):
+        li = 0.5 * (runs[i][0] + runs[i][1])
+        j = i + 1
+        while j < len(runs):
+            rj = 0.5 * (runs[j][0] + runs[j][1])
+            lane_w = rj - li
+            if lane_w >= MIN_TRACK_WIDTH and lane_w <= MAX_TRACK_WIDTH:
+                if lane_width_hint > 0:
+                    max_width_err = max(24.0, LANE_WIDTH_TOL_PX * 1.6)
+                    if abs(lane_w - lane_width_hint) > max_width_err:
+                        j += 1
+                        continue
+                center = 0.5 * (li + rj)
+                if center >= x0 and center <= x1:
+                    width_err = abs(lane_w - lane_width_hint) if lane_width_hint > 0 else 0.0
+                    center_err = abs(center - hint_center)
+                    score = 1.0 * center_err + 0.8 * width_err
+                    if score < best_score:
+                        best_score = score
+                        best = {
+                            "center_px": center,
+                            "lane_width_px": lane_w,
+                            "conf": 1.0,
+                        }
+            j += 1
+        i += 1
+    return best
+
+
+def choose_single_run_near_hint(runs, hint_center):
+    if not runs:
+        return None
+    best = None
+    best_err = 1e9
+    for run in runs:
+        c = 0.5 * (run[0] + run[1])
+        err = abs(c - hint_center)
+        if err < best_err:
+            best_err = err
+            best = run
+    return best
+
+
+def infer_center_from_single_run(run, hint_center, lane_width_hint, img_cx, x0, x1):
+    c = 0.5 * (run[0] + run[1])
+    w = max(float(lane_width_hint), float(MIN_TRACK_WIDTH))
+
+    cand_left = c + 0.5 * w
+    cand_right = c - 0.5 * w
+
+    # Prefer continuity with the previous center; tie-break by image side.
+    if abs(cand_left - hint_center) < abs(cand_right - hint_center):
+        center = cand_left
+    elif abs(cand_left - hint_center) > abs(cand_right - hint_center):
+        center = cand_right
+    else:
+        center = cand_left if c < img_cx else cand_right
+
+    center = clamp(center, x0, x1)
+    return {
+        "center_px": center,
+        "lane_width_px": w,
+        "conf": SINGLE_LINE_CONF,
+    }
+
+
+def scan_band_midline(
+    raw,
+    black_th,
+    img_w,
+    img_h,
+    img_cx,
+    row_cm_per_px,
+    row_distance_cm,
+    track_is_dark,
+    hint_x,
+    lane_width_hint,
+    y_start_ratio,
+    y_end_ratio,
+    max_rows,
+    row_step,
+):
+    x0 = 0
+    x1 = img_w - 1
+    y_start = int(clamp(y_start_ratio * img_h, 0, img_h - 1))
+    y_end = int(clamp(y_end_ratio * img_h, 0, img_h - 1))
+    if y_end < y_start:
+        y_end = y_start
+
+    centers_px = []
+    centers_cm = []
+    lane_widths = []
+    ys = []
+    zs_cm = []
+    conf_sum = 0.0
+
+    last_center = hint_x
+    last_width = lane_width_hint
+
+    rows_done = 0
+    y = y_start
+    while y <= y_end and rows_done < max_rows:
+        runs = collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark)
+        chosen = choose_pair_center_from_runs(runs, last_center, last_width, x0, x1)
+        if chosen is None and len(runs) >= 1:
+            best_run = choose_single_run_near_hint(runs, last_center)
+            if best_run is not None:
+                chosen = infer_center_from_single_run(best_run, last_center, last_width, img_cx, x0, x1)
+
+        if chosen is not None:
+            center_px = chosen["center_px"]
+            lane_w = chosen["lane_width_px"]
+            if abs(center_px - last_center) > (MAX_CENTER_JUMP_PX * 2.2):
+                rows_done += 1
+                y += max(1, row_step)
+                continue
+            x_cm, z_cm = px_to_ground_cm(center_px, y, img_h, img_cx, row_cm_per_px, row_distance_cm)
+            centers_px.append(center_px)
+            centers_cm.append(x_cm)
+            lane_widths.append(lane_w)
+            ys.append(y)
+            zs_cm.append(z_cm)
+            conf_sum += chosen["conf"]
+            last_center = center_px
+            last_width = lane_w
+
+        rows_done += 1
+        y += max(1, row_step)
+
+    if len(centers_px) < 3:
+        return None
+
+    center_px = median(centers_px)
+    center_cm = median(centers_cm)
+    lane_width_px = median(lane_widths)
+    dist_cm = median(zs_cm)
+    width_std = stdev(lane_widths)
+    a, _ = line_fit(ys, centers_px)
+    angle = math.degrees(math.atan(a))
+
+    hit_ratio = len(centers_px) / float(max(1, max_rows))
+    conf_raw = (conf_sum / float(max(1, len(centers_px)))) * hit_ratio
+    conf = conf_raw * (1.0 - clamp(width_std / max(WIDTH_STD_MAX, 1e-6), 0.0, 1.0))
+
+    return {
+        "center_cm": center_cm,
+        "center_px": center_px,
+        "dist_cm": dist_cm,
+        "lane_width_px": lane_width_px,
+        "weight": 1.0,
+        "angle": angle,
+        "conf": conf,
+    }
+
+
+def bottom_quarter_midline(raw, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x, lane_width_hint):
+    base = scan_band_midline(
+        raw,
+        black_th,
+        img_w,
+        img_h,
+        img_cx,
+        row_cm_per_px,
+        row_distance_cm,
+        track_is_dark,
+        hint_x,
+        lane_width_hint,
+        BOTTOM_START_RATIO,
+        1.0,
+        BOTTOM_ROWS,
+        BOTTOM_STEP,
+    )
+    if base is None:
+        return None
+
+    if ASSIST_ENABLE:
+        assist = scan_band_midline(
+            raw,
+            black_th,
+            img_w,
+            img_h,
+            img_cx,
+            row_cm_per_px,
+            row_distance_cm,
+            track_is_dark,
+            base["center_px"],
+            base["lane_width_px"],
+            ASSIST_START_RATIO,
+            ASSIST_END_RATIO,
+            ASSIST_ROWS,
+            ASSIST_STEP,
+        )
+        if assist is not None:
+            base["assist_center_px"] = assist["center_px"]
+            base["assist_center_cm"] = assist["center_cm"]
+            base["assist_dist_cm"] = assist["dist_cm"]
+            base["assist_angle_deg"] = assist["angle"]
+            base["assist_conf"] = assist["conf"]
+
+    return base
+
+
 def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x, lane_width_hint):
     x, y, w, h, weight = roi
     x0 = x
@@ -553,10 +798,9 @@ while robot.step(timestep) != -1:
     track_is_dark = state["track_dark_score"] >= 0
 
     roi_results = []
-    for roi in rois:
-        res = roi_midline(
+    if SIMPLE_BOTTOM_MODE:
+        res = bottom_quarter_midline(
             raw,
-            roi,
             black_th,
             img_w,
             img_h,
@@ -569,6 +813,23 @@ while robot.step(timestep) != -1:
         )
         if res is not None and res["conf"] >= CONF_MIN:
             roi_results.append(res)
+    else:
+        for roi in rois:
+            res = roi_midline(
+                raw,
+                roi,
+                black_th,
+                img_w,
+                img_h,
+                img_cx,
+                row_cm_per_px,
+                row_distance_cm,
+                track_is_dark,
+                state["last_lane_center_x"],
+                state["last_lane_width_px"],
+            )
+            if res is not None and res["conf"] >= CONF_MIN:
+                roi_results.append(res)
 
     steer = 0.0
     base_err_cm = 0.0
@@ -602,9 +863,23 @@ while robot.step(timestep) != -1:
 
         base_err_cm = near_err_cm
         base_err_px = near_err_px
+        use_assist = False
+        if SIMPLE_BOTTOM_MODE and ("assist_center_px" in near):
+            assist_conf = float(near.get("assist_conf", 0.0))
+            assist_delta = abs(float(near["assist_center_px"]) - float(near["center_px"]))
+            if assist_conf >= max(CONF_MIN, 0.28) and assist_delta <= (MAX_CENTER_JUMP_PX * 1.2):
+                use_assist = True
+
+        if use_assist:
+            far_err_px = float(near["assist_center_px"]) - img_cx
+            far_err_cm = float(near.get("assist_center_cm", near_err_cm))
+            far_dist_cm = float(near.get("assist_dist_cm", far_dist_cm))
+            angle_err = 0.5 * (near["angle"] + float(near.get("assist_angle_deg", near["angle"])))
+        else:
+            angle_err = 0.5 * (near["angle"] + far["angle"])
+
         curve_err = far_err_cm - near_err_cm
         curve_px = far_err_px - near_err_px
-        angle_err = 0.5 * (near["angle"] + far["angle"])
         avg_conf = sum(r["conf"] for r in roi_results) / float(len(roi_results))
 
         near_norm = near_err_px / max(0.5 * img_w, 1.0)
@@ -620,6 +895,9 @@ while robot.step(timestep) != -1:
         fused_err += PIX_LOOKAHEAD_GAIN * (-far_norm)
         fused_err += PIX_CURVE_GAIN * (-curve_norm)
         fused_err += PIX_ANGLE_GAIN * (-angle_err / 45.0)
+        if curve_px < -LEFT_CURVE_OUTWARD_PX:
+            # Left curves tend to cut to inner side at high speed; add a small outward correction.
+            fused_err += LEFT_CURVE_OUTWARD_GAIN * curve_norm
 
         state["smoothed_err"] = SMOOTH_ALPHA * state["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
         dt = timestep / 1000.0

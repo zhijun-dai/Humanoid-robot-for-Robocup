@@ -1,0 +1,20 @@
+WARNING: Solid "track_overlay" > Shape  > PBRAppearance "PBRAppearance" > ImageTexture : Texture image size of 'D:/用户/Lenovo/桌面/Robocup/generated/track_with_obstacle_start.png' is not a power of two: rescaling it from 3820x2600 to 4096x4096.
+INFO: line_follow_transfer: Starting controller: python.exe -u line_follow_transfer.py
+line_follow_transfer: camera=320x240, timestep=32ms
+th=120 steer=-3.7 ex=4.60cm ang=25.0deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=6.02 R=5.88 expx=12.0
+th=120 steer=-2.5 ex=4.22cm ang=26.5deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=6.10 R=6.01 expx=11.0
+th=120 steer=-1.1 ex=2.11cm ang=28.6deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=6.20 R=6.16 expx=5.5
+th=120 steer=-0.2 ex=0.48cm ang=30.3deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=6.27 R=6.26 expx=1.2
+th=120 steer=1.7 ex=-1.34cm ang=31.2deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=6.09 R=6.16 expx=-3.5
+th=120 steer=3.4 ex=-2.87cm ang=32.6deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.91 R=6.04 expx=-7.5
+th=120 steer=4.5 ex=-4.02cm ang=33.6deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.78 R=5.95 expx=-10.5
+th=120 steer=5.7 ex=-5.07cm ang=34.3deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.66 R=5.87 expx=-13.2
+th=120 steer=6.6 ex=-5.94cm ang=35.3deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.56 R=5.80 expx=-15.5
+th=120 steer=7.1 ex=-6.42cm ang=35.7deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.51 R=5.77 expx=-16.8
+th=120 steer=7.7 ex=-6.99cm ang=36.1deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.44 R=5.72 expx=-18.2
+th=120 steer=8.1 ex=-7.37cm ang=36.7deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.40 R=5.70 expx=-19.2
+th=120 steer=8.5 ex=-7.76cm ang=37.0deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.35 R=5.66 expx=-20.2
+th=120 steer=8.9 ex=-8.14cm ang=37.5deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.30 R=5.63 expx=-21.2
+th=120 steer=9.0 ex=-8.24cm ang=37.6deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.30 R=5.63 expx=-21.5
+th=120 steer=9.4 ex=-8.52cm ang=37.8deg z=115.0cm tg=0.00 mode=0 conf=0.55 lost=0 L=5.26 R=5.60 expx=-22.2
+INFO: line_follow_transfer: Terminating.

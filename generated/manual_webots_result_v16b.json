@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-04-08T12:27:09",
+  "trials": 1,
+  "run_seconds": 45,
+  "params_json": "line_follow_params.json",
+  "world": "Webots/worlds/Robocup.wbt",
+  "webots_cmd": "\"D:/Webots/msys64/mingw64/bin/webots.exe\" --stdout --stderr \"{world}\"",
+  "apply_best": false,
+  "best_trial": null,
+  "top5": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": false,
+      "return_code": 0,
+      "score": 1020000000.0,
+      "metrics": {
+        "samples": 0.0,
+        "mean_abs_ex_cm": 0.0,
+        "p95_abs_ex_cm": NaN,
+        "mean_abs_ang_deg": 0.0,
+        "steer_rms": 0.0,
+        "lost_ratio": 0.0,
+        "saturation_ratio": 0.0,
+        "conf_mean": 0.0
+      },
+      "params": {
+        "turn.start_dist_cm": 34.952,
+        "turn.err_cm": 4.15,
+        "fusion.lookahead_gain": 0.113,
+        "fusion.curve_gain": 0.096,
+        "fusion.angle_gain": 0.168,
+        "pid.curve_switch_cm": 7.707,
+        "pid.curve.kp": 1.05,
+        "pid.curve.ki": 0.002,
+        "pid.curve.kd": 0.1,
+        "steer.sat": 45.0,
+        "steer.scale": 0.6,
+        "webots.base_speed": 6.28,
+        "webots.steer_to_wheel": 0.0184,
+        "lost.search_turn": 11.0
+      }
+    }
+  ],
+  "all_trials": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": false,
+      "return_code": 0,
+      "score": 1020000000.0,
+      "metrics": {
+        "samples": 0.0,
+        "mean_abs_ex_cm": 0.0,
+        "p95_abs_ex_cm": NaN,
+        "mean_abs_ang_deg": 0.0,
+        "steer_rms": 0.0,
+        "lost_ratio": 0.0,
+        "saturation_ratio": 0.0,
+        "conf_mean": 0.0
+      },
+      "params": {
+        "turn.start_dist_cm": 34.952,
+        "turn.err_cm": 4.15,
+        "fusion.lookahead_gain": 0.113,
+        "fusion.curve_gain": 0.096,
+        "fusion.angle_gain": 0.168,
+        "pid.curve_switch_cm": 7.707,
+        "pid.curve.kp": 1.05,
+        "pid.curve.ki": 0.002,
+        "pid.curve.kd": 0.1,
+        "steer.sat": 45.0,
+        "steer.scale": 0.6,
+        "webots.base_speed": 6.28,
+        "webots.steer_to_wheel": 0.0184,
+        "lost.search_turn": 11.0
+      }
+    }
+  ],
+  "error": "No valid trial result (insufficient telemetry samples)"
+}

@@ -63,6 +63,16 @@
       ]
     ],
     "scan_lines_per_roi": 5,
+    "simple_bottom_mode": true,
+    "bottom_start_ratio": 0.68,
+    "bottom_rows": 18,
+    "bottom_step": 2,
+    "single_line_conf": 0.55,
+    "assist_enable": false,
+    "assist_start_ratio": 0.50,
+    "assist_end_ratio": 0.75,
+    "assist_rows": 12,
+    "assist_step": 2,
     "min_line_width": 2,
     "max_line_width": 95,
     "lane_width_init_px": 70,
@@ -80,7 +90,7 @@
     "offset": 8,
     "min": 25,
     "max": 120,
-    "dark_margin": 12,
+    "dark_margin": 10,
     "track_color": "auto"
   },
   "preprocess": {
@@ -147,9 +157,11 @@
     "speed_steer_slowdown": 0.65,
     "pixel_lookahead_gain": 0.0,
     "pixel_curve_gain": 0.0,
-    "pixel_angle_gain": 0.08,
+    "pixel_angle_gain": 0.0,
     "curve_switch_px": 20.0,
     "right_turn_scale": 0.55,
+    "left_curve_outward_gain": 0.0,
+    "left_curve_outward_px": 14.0,
     "camera_mount_height_cm": 40.0,
     "camera": {
       "device_name": "camera_ext",

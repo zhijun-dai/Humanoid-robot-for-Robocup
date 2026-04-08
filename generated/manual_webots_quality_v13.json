@@ -1,0 +1,30 @@
+{
+  "log": "generated/manual_webots_logs_v13/trial_000.log",
+  "thresholds": {
+    "in_lane_abs_ex_cm": 8.0,
+    "in_lane_min_conf": 0.2
+  },
+  "metrics": {
+    "samples": 591,
+    "valid_ratio": 0.9780033840947546,
+    "lost_ratio": 0.021996615905245348,
+    "mean_abs_ex_cm": 5.9747923875432525,
+    "p95_abs_ex_cm": 10.15,
+    "mean_abs_ang_deg": 30.0742214532872,
+    "mean_conf": 0.6177157360406091,
+    "mean_speed": 5.525109983079527,
+    "low_speed_ratio_v_lt_1_2": 0.0,
+    "in_lane_ratio": 0.5499153976311336,
+    "out_lane_ratio": 0.4500846023688663,
+    "max_out_lane_streak_frames": 73,
+    "max_out_lane_streak_sec": 18.25
+  },
+  "grades": {
+    "lost": "A",
+    "offset": "B",
+    "confidence": "B",
+    "speed": "A",
+    "in_lane": "C"
+  },
+  "verdict": "OK"
+}

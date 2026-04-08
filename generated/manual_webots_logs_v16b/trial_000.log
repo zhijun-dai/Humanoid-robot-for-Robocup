@@ -1,0 +1,3 @@
+WARNING: Solid "track_overlay" > Shape  > PBRAppearance "PBRAppearance" > ImageTexture : Texture image size of 'D:/用户/Lenovo/桌面/Robocup/generated/track_with_obstacle_start.png' is not a power of two: rescaling it from 3820x2600 to 4096x4096.
+INFO: line_follow_transfer: Starting controller: python.exe -u line_follow_transfer.py
+INFO: line_follow_transfer: Terminating.
