@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-04-08T12:07:23",
+  "trials": 1,
+  "run_seconds": 45,
+  "params_json": "line_follow_params.json",
+  "world": "Webots/worlds/Robocup.wbt",
+  "webots_cmd": "\"D:/Webots/msys64/mingw64/bin/webots.exe\" --stdout --stderr \"{world}\"",
+  "apply_best": false,
+  "best_trial": {
+    "trial": 0,
+    "label": "baseline",
+    "timed_out": true,
+    "return_code": 1,
+    "score": 45.89887918069846,
+    "metrics": {
+      "samples": 2356.0,
+      "mean_abs_ex_cm": 3.1512054329371817,
+      "p95_abs_ex_cm": 8.87,
+      "mean_abs_ang_deg": 33.56192699490662,
+      "steer_rms": 8.698744128078058,
+      "lost_ratio": 0.39091680814940577,
+      "saturation_ratio": 0.0,
+      "conf_mean": 0.3240577249575552
+    },
+    "params": {
+      "turn.start_dist_cm": 34.952,
+      "turn.err_cm": 4.15,
+      "fusion.lookahead_gain": 0.113,
+      "fusion.curve_gain": 0.096,
+      "fusion.angle_gain": 0.168,
+      "pid.curve_switch_cm": 7.707,
+      "pid.curve.kp": 1.05,
+      "pid.curve.ki": 0.002,
+      "pid.curve.kd": 0.1,
+      "steer.sat": 45.0,
+      "steer.scale": 0.6,
+      "webots.base_speed": 6.28,
+      "webots.steer_to_wheel": 0.0184,
+      "lost.search_turn": 11.0
+    }
+  },
+  "top5": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": true,
+      "return_code": 1,
+      "score": 45.89887918069846,
+      "metrics": {
+        "samples": 2356.0,
+        "mean_abs_ex_cm": 3.1512054329371817,
+        "p95_abs_ex_cm": 8.87,
+        "mean_abs_ang_deg": 33.56192699490662,
+        "steer_rms": 8.698744128078058,
+        "lost_ratio": 0.39091680814940577,
+        "saturation_ratio": 0.0,
+        "conf_mean": 0.3240577249575552
+      },
+      "params": {
+        "turn.start_dist_cm": 34.952,
+        "turn.err_cm": 4.15,
+        "fusion.lookahead_gain": 0.113,
+        "fusion.curve_gain": 0.096,
+        "fusion.angle_gain": 0.168,
+        "pid.curve_switch_cm": 7.707,
+        "pid.curve.kp": 1.05,
+        "pid.curve.ki": 0.002,
+        "pid.curve.kd": 0.1,
+        "steer.sat": 45.0,
+        "steer.scale": 0.6,
+        "webots.base_speed": 6.28,
+        "webots.steer_to_wheel": 0.0184,
+        "lost.search_turn": 11.0
+      }
+    }
+  ],
+  "all_trials": [
+    {
+      "trial": 0,
+      "label": "baseline",
+      "timed_out": true,
+      "return_code": 1,
+      "score": 45.89887918069846,
+      "metrics": {
+        "samples": 2356.0,
+        "mean_abs_ex_cm": 3.1512054329371817,
+        "p95_abs_ex_cm": 8.87,
+        "mean_abs_ang_deg": 33.56192699490662,
+        "steer_rms": 8.698744128078058,
+        "lost_ratio": 0.39091680814940577,
+        "saturation_ratio": 0.0,
+        "conf_mean": 0.3240577249575552
+      },
+      "params": {
+        "turn.start_dist_cm": 34.952,
+        "turn.err_cm": 4.15,
+        "fusion.lookahead_gain": 0.113,
+        "fusion.curve_gain": 0.096,
+        "fusion.angle_gain": 0.168,
+        "pid.curve_switch_cm": 7.707,
+        "pid.curve.kp": 1.05,
+        "pid.curve.ki": 0.002,
+        "pid.curve.kd": 0.1,
+        "steer.sat": 45.0,
+        "steer.scale": 0.6,
+        "webots.base_speed": 6.28,
+        "webots.steer_to_wheel": 0.0184,
+        "lost.search_turn": 11.0
+      }
+    }
+  ]
+}
