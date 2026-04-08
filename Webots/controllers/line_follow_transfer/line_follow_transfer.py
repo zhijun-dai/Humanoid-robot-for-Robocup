@@ -73,6 +73,8 @@ if not ROI_RATIOS:
 SCAN_LINES_PER_ROI = int(_cfg_get(SHARED_CFG, "roi.scan_lines_per_roi", 5))
 MIN_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_track_width", 12))
 MAX_TRACK_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_track_width", 220))
+MIN_PAIR_LINES = int(_cfg_get(SHARED_CFG, "roi.min_pair_lines", 2))
+MIN_PAIR_RATIO = float(_cfg_get(SHARED_CFG, "roi.min_pair_ratio", 0.4))
 
 TH_OFFSET = int(_cfg_get(SHARED_CFG, "threshold.offset", 8))
 TH_MIN = int(_cfg_get(SHARED_CFG, "threshold.min", 25))
@@ -89,6 +91,7 @@ LOOKAHEAD_GAIN = float(_cfg_get(SHARED_CFG, "fusion.lookahead_gain", 0.35))
 TRACK_COLOR_MODE = str(_cfg_get(SHARED_CFG, "threshold.track_color", "auto")).lower()
 MIN_LINE_WIDTH = int(_cfg_get(SHARED_CFG, "roi.min_line_width", 2))
 MAX_LINE_WIDTH = int(_cfg_get(SHARED_CFG, "roi.max_line_width", 80))
+LANE_WIDTH_INIT_PX = float(_cfg_get(SHARED_CFG, "roi.lane_width_init_px", 70.0))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
@@ -108,6 +111,9 @@ LOST_PREFER_LEFT = bool(_cfg_get(SHARED_CFG, "lost.prefer_left", True))
 BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 3.2))
 STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.040))
 MAX_SPEED = float(_cfg_get(SHARED_CFG, "webots.max_speed", 6.28))
+SPEED_TURN_SLOWDOWN = float(_cfg_get(SHARED_CFG, "webots.speed_turn_slowdown", 0.45))
+SPEED_LOST_SCALE = float(_cfg_get(SHARED_CFG, "webots.speed_lost_scale", 0.75))
+SPEED_MIN = float(_cfg_get(SHARED_CFG, "webots.speed_min", 0.6))
 CAMERA_DEVICE_NAME = str(_cfg_get(SHARED_CFG, "webots.camera.device_name", "camera_ext"))
 
 
@@ -272,45 +278,21 @@ def px_to_ground_cm(x, y, img_h, img_cx, row_cm_per_px, row_distance_cm):
     return x_cm, z_cm
 
 
-def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w):
-    # Prefer center-out search to lock onto the nearest lane boundaries.
-    mid = (x0 + x1) // 2
-
+def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark):
     left = -1
-    x = mid
-    while x >= x0:
-        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
-            left = x
-            break
-        x -= 1
-
-    right = -1
-    x = mid
-    while x <= x1:
-        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
-            right = x
-            break
-        x += 1
-
-    if left >= 0 and right >= 0:
-        width = right - left
-        if MIN_TRACK_WIDTH <= width <= MAX_TRACK_WIDTH:
-            return left, right
-
-    # Fallback: whole-row search keeps compatibility with old behavior.
-    left = -1
-    right = -1
-
     x = x0
     while x <= x1:
-        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
+        g = grayscale_from_bgra(raw, img_w, x, y)
+        if pixel_is_track(g, black_th, track_is_dark):
             left = x
             break
         x += 1
 
+    right = -1
     x = x1
     while x >= x0:
-        if grayscale_from_bgra(raw, img_w, x, y) <= black_th:
+        g = grayscale_from_bgra(raw, img_w, x, y)
+        if pixel_is_track(g, black_th, track_is_dark):
             right = x
             break
         x -= 1
@@ -318,9 +300,10 @@ def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w):
     if left < 0 or right < 0:
         return None
 
-    width = right - left
-    if width < MIN_TRACK_WIDTH or width > MAX_TRACK_WIDTH:
+    lane_w = right - left
+    if lane_w < MIN_TRACK_WIDTH or lane_w > MAX_TRACK_WIDTH:
         return None
+
     return left, right
 
 
@@ -357,57 +340,14 @@ def pixel_is_track(g, black_th, track_is_dark):
     return g >= black_th
 
 
-def find_single_line_center_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark, hint_x):
-    runs = []
-
-    in_run = False
-    run_start = x0
-    x = x0
-    while x <= x1:
-        g = grayscale_from_bgra(raw, img_w, x, y)
-        is_track = pixel_is_track(g, black_th, track_is_dark)
-
-        if is_track and not in_run:
-            in_run = True
-            run_start = x
-        elif (not is_track) and in_run:
-            run_end = x - 1
-            run_w = run_end - run_start + 1
-            if MIN_LINE_WIDTH <= run_w <= MAX_LINE_WIDTH:
-                center = 0.5 * (run_start + run_end)
-                runs.append((center, run_w))
-            in_run = False
-        x += 1
-
-    if in_run:
-        run_end = x1
-        run_w = run_end - run_start + 1
-        if MIN_LINE_WIDTH <= run_w <= MAX_LINE_WIDTH:
-            center = 0.5 * (run_start + run_end)
-            runs.append((center, run_w))
-
-    if not runs:
-        return None
-
-    best = runs[0]
-    best_score = abs(best[0] - hint_x)
-    for r in runs[1:]:
-        score = abs(r[0] - hint_x)
-        if score < best_score:
-            best = r
-            best_score = score
-
-    return best
-
-
-def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x):
+def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x, lane_width_hint):
     x, y, w, h, weight = roi
     x0 = x
     x1 = x + w - 1
 
     centers_cm = []
     centers_px = []
-    widths = []
+    lane_widths = []
     ys = []
     zs_cm = []
 
@@ -416,22 +356,22 @@ def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_dis
         step = 1
 
     i = 1
-    last_x = hint_x
     while i <= SCAN_LINES_PER_ROI:
         sy = y + i * step
         if sy >= img_h:
             sy = img_h - 1
 
-        one = find_single_line_center_on_row(raw, sy, x0, x1, black_th, img_w, track_is_dark, last_x)
-        if one is not None:
-            center_px, run_w = one
+        lr = find_lr_edges_on_row(raw, sy, x0, x1, black_th, img_w, track_is_dark)
+        if lr is not None:
+            left, right = lr
+            lane_w = right - left
+            center_px = 0.5 * (left + right)
             x_cm, z_cm = px_to_ground_cm(center_px, sy, img_h, img_cx, row_cm_per_px, row_distance_cm)
             centers_cm.append(x_cm)
             centers_px.append(center_px)
             zs_cm.append(z_cm)
-            widths.append(run_w)
+            lane_widths.append(lane_w)
             ys.append(sy)
-            last_x = center_px
         i += 1
 
     if len(centers_cm) < MIN_VALID_LINES:
@@ -440,7 +380,8 @@ def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_dis
     center_cm = median(centers_cm)
     center_px = median(centers_px)
     dist_cm = median(zs_cm)
-    width_std = stdev(widths)
+    lane_width_px = median(lane_widths)
+    width_std = stdev(lane_widths)
     conf = (len(centers_cm) / float(SCAN_LINES_PER_ROI)) * (1.0 - clamp(width_std / WIDTH_STD_MAX, 0.0, 1.0))
 
     a, _ = line_fit(zs_cm, centers_cm)
@@ -450,6 +391,7 @@ def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_dis
         "center_cm": center_cm,
         "center_px": center_px,
         "dist_cm": dist_cm,
+        "lane_width_px": lane_width_px,
         "weight": weight,
         "angle": angle,
         "conf": conf,
@@ -512,7 +454,8 @@ state = {
     "last_base_err": 0.0,
     "last_angle_err": 0.0,
     "last_far_dist": 0.0,
-    "last_line_x": float(img_cx),
+    "last_lane_center_x": float(img_cx),
+    "last_lane_width_px": float(LANE_WIDTH_INIT_PX),
     "track_dark_score": 0,
 }
 
@@ -544,7 +487,8 @@ while robot.step(timestep) != -1:
             row_cm_per_px,
             row_distance_cm,
             track_is_dark,
-            state["last_line_x"],
+            state["last_lane_center_x"],
+            state["last_lane_width_px"],
         )
         if res is not None and res["conf"] >= CONF_MIN:
             roi_results.append(res)
@@ -573,7 +517,8 @@ while robot.step(timestep) != -1:
         near_err_cm = near["center_cm"]
         far_err_cm = far["center_cm"]
         far_dist_cm = far["dist_cm"]
-        state["last_line_x"] = clamp(float(near["center_px"]), 0.0, float(img_w - 1))
+        state["last_lane_center_x"] = clamp(float(near["center_px"]), 0.0, float(img_w - 1))
+        state["last_lane_width_px"] = clamp(float(near["lane_width_px"]), float(MIN_TRACK_WIDTH), float(MAX_TRACK_WIDTH))
 
         base_err_cm = near_err_cm
         curve_err = far_err_cm - near_err_cm
@@ -622,10 +567,10 @@ while robot.step(timestep) != -1:
                 search_sign = 1.0 if state["last_steer"] >= 0 else -1.0
             steer = search_sign * LOST_SEARCH_TURN
 
-    speed_scale = 1.0 - 0.45 * turn_gate
+    speed_scale = 1.0 - SPEED_TURN_SLOWDOWN * turn_gate
     if state["lost_frames"] > 0:
-        speed_scale *= 0.75
-    target_base_speed = clamp(BASE_SPEED * speed_scale, 0.6, BASE_SPEED)
+        speed_scale *= SPEED_LOST_SCALE
+    target_base_speed = clamp(BASE_SPEED * speed_scale, SPEED_MIN, BASE_SPEED)
 
     delta = clamp(steer * STEER_TO_WHEEL, -2.8, 2.8)
     left_speed = clamp(target_base_speed - delta, -max_speed, max_speed)

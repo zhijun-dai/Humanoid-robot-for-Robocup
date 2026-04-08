@@ -65,11 +65,14 @@
     "scan_lines_per_roi": 5,
     "min_line_width": 2,
     "max_line_width": 95,
+    "lane_width_init_px": 70,
     "min_track_width": 12,
     "max_track_width": 220,
+    "min_pair_lines": 1,
+    "min_pair_ratio": 0.2,
     "min_valid_lines": 2,
-    "width_std_max": 23,
-    "conf_min": 0.1
+    "width_std_max": 28,
+    "conf_min": 0.06
   },
   "threshold": {
     "offset": 8,
@@ -128,9 +131,16 @@
       "slight_left": "4"
     }
   },
+  "evaluation": {
+    "in_lane_abs_ex_cm": 8.0,
+    "in_lane_min_conf": 0.2
+  },
   "webots": {
-    "base_speed": 2.0,
+    "base_speed": 2.3,
     "steer_to_wheel": 0.0184,
+    "speed_turn_slowdown": 0.3,
+    "speed_lost_scale": 0.9,
+    "speed_min": 1.0,
     "camera_mount_height_cm": 40.0,
     "camera": {
       "device_name": "camera_ext",

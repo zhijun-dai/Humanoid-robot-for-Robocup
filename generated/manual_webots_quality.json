@@ -1,0 +1,21 @@
+{
+  "log": "generated/manual_webots_logs/trial_000.log",
+  "metrics": {
+    "samples": 154,
+    "valid_ratio": 0.7467532467532467,
+    "lost_ratio": 0.2532467532467532,
+    "mean_abs_ex_cm": 20.369739130434784,
+    "p95_abs_ex_cm": 50.64,
+    "mean_abs_ang_deg": 25.882608695652173,
+    "mean_conf": 0.6033116883116882,
+    "mean_speed": 1.197435064935065,
+    "low_speed_ratio_v_lt_1_2": 0.2532467532467532
+  },
+  "grades": {
+    "lost": "C",
+    "offset": "C",
+    "confidence": "B",
+    "speed": "C"
+  },
+  "verdict": "POOR"
+}
