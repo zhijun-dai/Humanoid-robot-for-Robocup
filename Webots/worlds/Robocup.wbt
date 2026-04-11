@@ -71,7 +71,7 @@ E-puck {
           width 320
           height 240
           fieldOfView 0.9793406158899142
-          rotation 0 1 0 0.5235987755982988
+          rotation 0 1 0 0.7853981633974483
           near 0.01
         }
       ]
