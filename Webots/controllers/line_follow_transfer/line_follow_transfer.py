@@ -105,6 +105,25 @@ ASSIST_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.assist_start_ratio", 0.50))
 ASSIST_END_RATIO = float(_cfg_get(SHARED_CFG, "roi.assist_end_ratio", 0.75))
 ASSIST_ROWS = int(_cfg_get(SHARED_CFG, "roi.assist_rows", 12))
 ASSIST_STEP = int(_cfg_get(SHARED_CFG, "roi.assist_step", 2))
+THREE_BAND_MODE = bool(_cfg_get(SHARED_CFG, "roi.three_band_mode", True))
+BAND_DOWN_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.band_down_start_ratio", 2.0 / 3.0))
+BAND_MID_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.band_mid_start_ratio", 1.0 / 3.0))
+BAND_UP_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.band_up_start_ratio", 0.0))
+BAND_ROWS_DOWN = int(_cfg_get(SHARED_CFG, "roi.band_rows_down", 16))
+BAND_ROWS_MID = int(_cfg_get(SHARED_CFG, "roi.band_rows_mid", 14))
+BAND_ROWS_UP = int(_cfg_get(SHARED_CFG, "roi.band_rows_up", 12))
+BAND_STEP_DOWN = int(_cfg_get(SHARED_CFG, "roi.band_step_down", 2))
+BAND_STEP_MID = int(_cfg_get(SHARED_CFG, "roi.band_step_mid", 2))
+BAND_STEP_UP = int(_cfg_get(SHARED_CFG, "roi.band_step_up", 2))
+BAND_WEIGHT_DOWN = float(_cfg_get(SHARED_CFG, "roi.band_weight_down", 0.58))
+BAND_WEIGHT_MID = float(_cfg_get(SHARED_CFG, "roi.band_weight_mid", 0.30))
+BAND_WEIGHT_UP = float(_cfg_get(SHARED_CFG, "roi.band_weight_up", 0.12))
+CROSS_BLACK_RUN_RATIO = float(_cfg_get(SHARED_CFG, "roi.cross_black_run_ratio", 0.42))
+CROSS_BLACK_COVER_RATIO = float(_cfg_get(SHARED_CFG, "roi.cross_black_cover_ratio", 0.56))
+RED_DETECT_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.red_detect_enable", True))
+RED_MIN_R = int(_cfg_get(SHARED_CFG, "roi.red_min_r", 105))
+RED_DOM_MARGIN = int(_cfg_get(SHARED_CFG, "roi.red_dom_margin", 28))
+RED_ROW_RATIO = float(_cfg_get(SHARED_CFG, "roi.red_row_ratio", 0.35))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
@@ -194,6 +213,11 @@ def grayscale_from_bgra(raw, w, x, y):
     g = raw[idx + 1]
     r = raw[idx + 2]
     return (114 * b + 587 * g + 299 * r) // 1000
+
+
+def rgb_from_bgra(raw, w, x, y):
+    idx = (y * w + x) * 4
+    return raw[idx + 2], raw[idx + 1], raw[idx]
 
 
 def otsu_threshold(raw, w, h):
@@ -330,6 +354,45 @@ def pixel_is_track(g, black_th, track_is_dark):
     if track_is_dark:
         return g <= max(0, black_th - DARK_MARGIN)
     return g >= min(255, black_th + DARK_MARGIN)
+
+
+def pixel_is_red(raw, w, x, y):
+    if not RED_DETECT_ENABLE:
+        return False
+    r, g, b = rgb_from_bgra(raw, w, x, y)
+    return (r >= RED_MIN_R) and ((r - g) >= RED_DOM_MARGIN) and ((r - b) >= RED_DOM_MARGIN)
+
+
+def detect_row_blocker(raw, y, x0, x1, black_th, img_w, track_is_dark):
+    total = max(1, x1 - x0 + 1)
+    track_count = 0
+    red_count = 0
+    longest_track_run = 0
+    cur_run = 0
+
+    x = x0
+    while x <= x1:
+        g = grayscale_from_bgra(raw, img_w, x, y)
+        is_track = pixel_is_track(g, black_th, track_is_dark)
+        if is_track:
+            track_count += 1
+            cur_run += 1
+            if cur_run > longest_track_run:
+                longest_track_run = cur_run
+        else:
+            cur_run = 0
+
+        if pixel_is_red(raw, img_w, x, y):
+            red_count += 1
+        x += 1
+
+    red_ratio = red_count / float(total)
+    cover_ratio = track_count / float(total)
+    run_ratio = longest_track_run / float(total)
+
+    red_block = red_ratio >= RED_ROW_RATIO
+    black_block = (run_ratio >= CROSS_BLACK_RUN_RATIO) and (cover_ratio >= CROSS_BLACK_COVER_RATIO)
+    return red_block, black_block
 
 
 def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark, hint_x, lane_width_hint):
@@ -479,6 +542,7 @@ def choose_pair_center_from_runs(runs, hint_center, lane_width_hint, x0, x1):
                             "center_px": center,
                             "lane_width_px": lane_w,
                             "conf": 1.0,
+                            "line_mode": 2,
                         }
             j += 1
         i += 1
@@ -519,6 +583,7 @@ def infer_center_from_single_run(run, hint_center, lane_width_hint, img_cx, x0, 
         "center_px": center,
         "lane_width_px": w,
         "conf": SINGLE_LINE_CONF,
+        "line_mode": 1,
     }
 
 
@@ -551,6 +616,10 @@ def scan_band_midline(
     ys = []
     zs_cm = []
     conf_sum = 0.0
+    pair_rows = 0
+    single_rows = 0
+    red_block_rows = 0
+    black_block_rows = 0
 
     last_center = hint_x
     last_width = lane_width_hint
@@ -558,6 +627,18 @@ def scan_band_midline(
     rows_done = 0
     y = y_start
     while y <= y_end and rows_done < max_rows:
+        red_block, black_block = detect_row_blocker(raw, y, x0, x1, black_th, img_w, track_is_dark)
+        if red_block:
+            red_block_rows += 1
+            rows_done += 1
+            y += max(1, row_step)
+            continue
+        if black_block:
+            black_block_rows += 1
+            rows_done += 1
+            y += max(1, row_step)
+            continue
+
         runs = collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark)
         chosen = choose_pair_center_from_runs(runs, last_center, last_width, x0, x1)
         if chosen is None and len(runs) >= 1:
@@ -579,6 +660,10 @@ def scan_band_midline(
             ys.append(y)
             zs_cm.append(z_cm)
             conf_sum += chosen["conf"]
+            if int(chosen.get("line_mode", 1)) >= 2:
+                pair_rows += 1
+            else:
+                single_rows += 1
             last_center = center_px
             last_width = lane_w
 
@@ -599,6 +684,13 @@ def scan_band_midline(
     hit_ratio = len(centers_px) / float(max(1, max_rows))
     conf_raw = (conf_sum / float(max(1, len(centers_px)))) * hit_ratio
     conf = conf_raw * (1.0 - clamp(width_std / max(WIDTH_STD_MAX, 1e-6), 0.0, 1.0))
+    blocker_ratio = (red_block_rows + black_block_rows) / float(max(1, max_rows))
+    if blocker_ratio > 0.25:
+        conf *= (1.0 - 0.55 * clamp((blocker_ratio - 0.25) / 0.75, 0.0, 1.0))
+
+    valid_rows = max(1, pair_rows + single_rows)
+    pair_ratio = pair_rows / float(valid_rows)
+    single_ratio = single_rows / float(valid_rows)
 
     return {
         "center_cm": center_cm,
@@ -608,6 +700,10 @@ def scan_band_midline(
         "weight": 1.0,
         "angle": angle,
         "conf": conf,
+        "pair_ratio": pair_ratio,
+        "single_ratio": single_ratio,
+        "red_block_ratio": red_block_rows / float(max(1, max_rows)),
+        "black_block_ratio": black_block_rows / float(max(1, max_rows)),
     }
 
 
@@ -656,6 +752,76 @@ def bottom_quarter_midline(raw, black_th, img_w, img_h, img_cx, row_cm_per_px, r
             base["assist_conf"] = assist["conf"]
 
     return base
+
+
+def detect_three_band_lanes(raw, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x, lane_width_hint):
+    band_specs = [
+        ("down", BAND_DOWN_START_RATIO, 1.0, BAND_ROWS_DOWN, BAND_STEP_DOWN, BAND_WEIGHT_DOWN),
+        ("mid", BAND_MID_START_RATIO, BAND_DOWN_START_RATIO, BAND_ROWS_MID, BAND_STEP_MID, BAND_WEIGHT_MID),
+        ("up", BAND_UP_START_RATIO, BAND_MID_START_RATIO, BAND_ROWS_UP, BAND_STEP_UP, BAND_WEIGHT_UP),
+    ]
+
+    results = []
+    last_center = hint_x
+    last_width = lane_width_hint
+    for name, ys, ye, rows, step, weight in band_specs:
+        res = scan_band_midline(
+            raw,
+            black_th,
+            img_w,
+            img_h,
+            img_cx,
+            row_cm_per_px,
+            row_distance_cm,
+            track_is_dark,
+            last_center,
+            last_width,
+            ys,
+            ye,
+            rows,
+            step,
+        )
+        if res is None:
+            continue
+        res["weight"] = weight
+        res["band_name"] = name
+        results.append(res)
+        last_center = res["center_px"]
+        last_width = res["lane_width_px"]
+
+    return results
+
+
+def band_bit(name):
+    if name == "down":
+        return 0x1
+    if name == "mid":
+        return 0x2
+    if name == "up":
+        return 0x4
+    return 0
+
+
+def pick_result_by_band(results, order):
+    for name in order:
+        for r in results:
+            if str(r.get("band_name", "")) == name:
+                return r
+    return None
+
+
+def result_quality_weight(r):
+    pair_ratio = float(r.get("pair_ratio", 0.0))
+    single_ratio = float(r.get("single_ratio", 1.0 - pair_ratio))
+    q = 0.60 + 0.40 * pair_ratio
+    if pair_ratio < MIN_PAIR_RATIO:
+        q *= 0.80
+    q *= (1.0 - 0.12 * clamp(single_ratio, 0.0, 1.0))
+    return clamp(q, 0.20, 1.00)
+
+
+def single_band_mask(mask):
+    return mask in (0x1, 0x2, 0x4)
 
 
 def roi_midline(raw, roi, black_th, img_w, img_h, img_cx, row_cm_per_px, row_distance_cm, track_is_dark, hint_x, lane_width_hint):
@@ -779,6 +945,7 @@ state = {
     "last_lane_center_x": float(img_cx),
     "last_lane_width_px": float(LANE_WIDTH_INIT_PX),
     "track_dark_score": 0,
+    "last_band_mask": 0,
 }
 
 max_speed = MAX_SPEED
@@ -798,7 +965,21 @@ while robot.step(timestep) != -1:
     track_is_dark = state["track_dark_score"] >= 0
 
     roi_results = []
-    if SIMPLE_BOTTOM_MODE:
+    if THREE_BAND_MODE:
+        roi_results = detect_three_band_lanes(
+            raw,
+            black_th,
+            img_w,
+            img_h,
+            img_cx,
+            row_cm_per_px,
+            row_distance_cm,
+            track_is_dark,
+            state["last_lane_center_x"],
+            state["last_lane_width_px"],
+        )
+        roi_results = [r for r in roi_results if r["conf"] >= CONF_MIN]
+    elif SIMPLE_BOTTOM_MODE:
         res = bottom_quarter_midline(
             raw,
             black_th,
@@ -839,24 +1020,45 @@ while robot.step(timestep) != -1:
     turn_gate = 0.0
     curve_mode = 0
     avg_conf = 0.0
+    band_mask = 0
+    red_block_score = 0.0
+    black_block_score = 0.0
 
     if roi_results:
         score_total = 0.0
         for r in roi_results:
-            score_total += r["weight"] * r["conf"]
+            score_total += r["weight"] * r["conf"] * result_quality_weight(r)
         if score_total <= MIN_WEIGHT:
             roi_results = []
 
     if roi_results:
         state["lost_frames"] = 0
 
-        near = min(roi_results, key=lambda r: r["dist_cm"])
-        far = max(roi_results, key=lambda r: r["dist_cm"])
+        near = pick_result_by_band(roi_results, ("down", "mid", "up"))
+        if near is None:
+            near = min(roi_results, key=lambda r: r["dist_cm"])
+
+        far = pick_result_by_band(roi_results, ("up", "mid", "down"))
+        if far is None:
+            far = max(roi_results, key=lambda r: r["dist_cm"])
+
+        for r in roi_results:
+            bn = str(r.get("band_name", ""))
+            band_mask |= band_bit(bn)
+            red_block_score = max(red_block_score, float(r.get("red_block_ratio", 0.0)))
+            black_block_score = max(black_block_score, float(r.get("black_block_ratio", 0.0)))
+        state["last_band_mask"] = band_mask
 
         near_err_cm = near["center_cm"]
         far_err_cm = far["center_cm"]
         near_err_px = near["center_px"] - img_cx
         far_err_px = far["center_px"] - img_cx
+
+        # If the near band is missing (only mid/up visible), blend with history to avoid step-like jumps.
+        if str(near.get("band_name", "")) != "down":
+            near_err_cm = 0.68 * near_err_cm + 0.32 * state["last_base_err"]
+            near_err_px = 0.68 * near_err_px + 0.32 * (state["last_lane_center_x"] - img_cx)
+
         far_dist_cm = far["dist_cm"]
         state["last_lane_center_x"] = clamp(float(near["center_px"]), 0.0, float(img_w - 1))
         state["last_lane_width_px"] = clamp(float(near["lane_width_px"]), float(MIN_TRACK_WIDTH), float(MAX_TRACK_WIDTH))
@@ -878,9 +1080,8 @@ while robot.step(timestep) != -1:
         else:
             angle_err = 0.5 * (near["angle"] + far["angle"])
 
-        curve_err = far_err_cm - near_err_cm
         curve_px = far_err_px - near_err_px
-        avg_conf = sum(r["conf"] for r in roi_results) / float(len(roi_results))
+        avg_conf = sum((r["conf"] * result_quality_weight(r)) for r in roi_results) / float(len(roi_results))
 
         near_norm = near_err_px / max(0.5 * img_w, 1.0)
         far_norm = far_err_px / max(0.5 * img_w, 1.0)
@@ -888,6 +1089,8 @@ while robot.step(timestep) != -1:
 
         turn_gate = clamp(abs(curve_px) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
         curve_mode_force = abs(curve_px) >= CURVE_SWITCH_PX
+        if single_band_mask(band_mask):
+            curve_mode_force = curve_mode_force or (abs(angle_err) >= 8.0)
         curve_mode = 1 if curve_mode_force else 0
 
         # Pixel-domain center control: right-side line means negative steer (turn right).
@@ -917,6 +1120,7 @@ while robot.step(timestep) != -1:
         angle_err = state["last_angle_err"]
         far_dist_cm = state["last_far_dist"]
         avg_conf = 0.0
+        band_mask = state["last_band_mask"]
         turn_gate = 1.0
         curve_mode = 1
         if state["lost_frames"] <= LOST_HOLD_FRAMES:
@@ -928,6 +1132,8 @@ while robot.step(timestep) != -1:
     speed_scale = 1.0 - SPEED_STEER_SLOWDOWN * steer_norm
     if state["lost_frames"] > 0:
         speed_scale *= SPEED_LOST_SCALE
+    blocker_ratio = clamp(max(red_block_score, black_block_score), 0.0, 1.0)
+    speed_scale *= (1.0 - 0.35 * blocker_ratio)
     target_base_speed = clamp(BASE_SPEED * speed_scale, SPEED_MIN, BASE_SPEED)
 
     delta = clamp(steer * STEER_TO_WHEEL, -2.8, 2.8)
@@ -941,7 +1147,7 @@ while robot.step(timestep) != -1:
     if now - state["last_print"] > 0.25:
         state["last_print"] = now
         print(
-            "th=%d steer=%.1f ex=%.2fcm ang=%.1fdeg z=%.1fcm tg=%.2f mode=%d conf=%.2f lost=%d L=%.2f R=%.2f expx=%.1f"
+            "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f"
             % (
                 black_th,
                 steer,
@@ -955,5 +1161,8 @@ while robot.step(timestep) != -1:
                 left_speed,
                 right_speed,
                 base_err_px,
+                band_mask,
+                red_block_score,
+                black_block_score,
             )
         )
