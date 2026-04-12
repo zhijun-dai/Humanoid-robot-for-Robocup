@@ -303,7 +303,7 @@ def build_rois(img_w, img_h):
     return rois
 
 
-def build_camera_lut(img_w, img_h, img_cx):
+def build_camera_lut(img_w, img_h):
     row_distance_cm = [0.0] * img_h
     row_cm_per_px = [0.0] * img_h
     half_v = CAM_VFOV_DEG * 0.5
@@ -451,27 +451,8 @@ def find_lr_edges_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark, hint_x,
     if left >= 0 and right >= 0:
         return left, right
 
-    # Fallback: find all dark runs in this row and pick the pair closest to hint and width hint.
-    runs = []
-    run_start = -1
-    x = x0
-    while x <= x1:
-        g = grayscale_from_bgra(raw, img_w, x, y)
-        is_track = pixel_is_track(g, black_th, track_is_dark)
-        if is_track and run_start < 0:
-            run_start = x
-        elif (not is_track) and run_start >= 0:
-            run_end = x - 1
-            w = run_end - run_start + 1
-            if w >= MIN_LINE_WIDTH and w <= MAX_LINE_WIDTH:
-                runs.append((run_start, run_end))
-            run_start = -1
-        x += 1
-    if run_start >= 0:
-        run_end = x1
-        w = run_end - run_start + 1
-        if w >= MIN_LINE_WIDTH and w <= MAX_LINE_WIDTH:
-            runs.append((run_start, run_end))
+    # Fallback: find all track runs in this row and pick the pair closest to hint and width hint.
+    runs = collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark)
 
     if len(runs) < 2:
         return None
@@ -615,6 +596,7 @@ def scan_band_midline(
     max_rows,
     row_step,
 ):
+    row_step = max(1, row_step)
     x0 = 0
     x1 = img_w - 1
     y_start = int(clamp(y_start_ratio * img_h, 0, img_h - 1))
@@ -643,12 +625,12 @@ def scan_band_midline(
         if red_block:
             red_block_rows += 1
             rows_done += 1
-            y += max(1, row_step)
+            y += row_step
             continue
         if black_block:
             black_block_rows += 1
             rows_done += 1
-            y += max(1, row_step)
+            y += row_step
             continue
 
         runs = collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark)
@@ -663,7 +645,7 @@ def scan_band_midline(
             lane_w = chosen["lane_width_px"]
             if abs(center_px - last_center) > (MAX_CENTER_JUMP_PX * 2.2):
                 rows_done += 1
-                y += max(1, row_step)
+                y += row_step
                 continue
             x_cm, z_cm = px_to_ground_cm(center_px, y, img_h, img_cx, row_cm_per_px, row_distance_cm)
             centers_px.append(center_px)
@@ -680,7 +662,7 @@ def scan_band_midline(
             last_width = lane_w
 
         rows_done += 1
-        y += max(1, row_step)
+        y += row_step
 
     if len(centers_px) < 3:
         return None
@@ -832,7 +814,7 @@ def result_quality_weight(r):
     return clamp(q, 0.20, 1.00)
 
 
-def detect_bottom_center_lock(raw, black_th, img_w, img_h, img_cx, track_is_dark, lane_width_hint):
+def detect_bottom_center_lock(raw, black_th, img_w, img_h, img_cx, track_is_dark):
     if not BOTTOM_LOCK_ENABLE:
         return {
             "valid": True,
@@ -1014,7 +996,7 @@ img_h = camera.getHeight()
 img_cx = img_w // 2
 
 rois = build_rois(img_w, img_h)
-row_distance_cm, row_cm_per_px = build_camera_lut(img_w, img_h, img_cx)
+row_distance_cm, row_cm_per_px = build_camera_lut(img_w, img_h)
 
 state = {
     "integral": 0.0,
@@ -1122,7 +1104,6 @@ while robot.step(timestep) != -1:
         img_h,
         img_cx,
         track_is_dark,
-        state["last_lane_width_px"],
     )
     bottom_pair_ratio = float(bottom_lock.get("pair_ratio", 0.0))
     bottom_sym_err_px = float(bottom_lock.get("center_err_px", 0.0))
