@@ -124,6 +124,18 @@ RED_DETECT_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.red_detect_enable", True))
 RED_MIN_R = int(_cfg_get(SHARED_CFG, "roi.red_min_r", 105))
 RED_DOM_MARGIN = int(_cfg_get(SHARED_CFG, "roi.red_dom_margin", 28))
 RED_ROW_RATIO = float(_cfg_get(SHARED_CFG, "roi.red_row_ratio", 0.35))
+BOTTOM_LOCK_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.bottom_lock_enable", True))
+BOTTOM_LOCK_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_start_ratio", 0.80))
+BOTTOM_LOCK_ROWS = int(_cfg_get(SHARED_CFG, "roi.bottom_lock_rows", 12))
+BOTTOM_LOCK_STEP = int(_cfg_get(SHARED_CFG, "roi.bottom_lock_step", 2))
+BOTTOM_LOCK_MIN_PAIR_RATIO = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_min_pair_ratio", 0.55))
+BOTTOM_LOCK_SYM_TOL_PX = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_sym_tol_px", 12.0))
+BOTTOM_LOCK_BLEND = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_blend", 0.55))
+BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_penalty", 0.45))
+BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.25))
+STARTUP_SETTLE_FRAMES = int(_cfg_get(SHARED_CFG, "roi.startup_settle_frames", 25))
+STARTUP_SPEED_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_speed_scale", 0.55))
+LOCK_REACQUIRE_RESET = bool(_cfg_get(SHARED_CFG, "roi.lock_reacquire_reset", True))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.70))
@@ -820,6 +832,78 @@ def result_quality_weight(r):
     return clamp(q, 0.20, 1.00)
 
 
+def detect_bottom_center_lock(raw, black_th, img_w, img_h, img_cx, track_is_dark, lane_width_hint):
+    if not BOTTOM_LOCK_ENABLE:
+        return {
+            "valid": True,
+            "quality": 1.0,
+            "pair_ratio": 1.0,
+            "center_px": float(img_cx),
+            "center_err_px": 0.0,
+            "symmetry_abs_px": 0.0,
+        }
+
+    x0 = 0
+    x1 = img_w - 1
+    y_start = int(clamp(BOTTOM_LOCK_START_RATIO * img_h, 0, img_h - 1))
+    row_step = max(1, BOTTOM_LOCK_STEP)
+
+    pair_rows = 0
+    rows_done = 0
+    centers = []
+
+    y = y_start
+    while y < img_h and rows_done < max(1, BOTTOM_LOCK_ROWS):
+        red_block, black_block = detect_row_blocker(raw, y, x0, x1, black_th, img_w, track_is_dark)
+        if red_block or black_block:
+            rows_done += 1
+            y += row_step
+            continue
+
+        runs = collect_track_runs_on_row(raw, y, x0, x1, black_th, img_w, track_is_dark)
+        # For lock detection, avoid over-trusting width hint so startup is less sticky.
+        chosen = choose_pair_center_from_runs(runs, img_cx, 0.0, x0, x1)
+        if chosen is not None:
+            pair_rows += 1
+            centers.append(float(chosen["center_px"]))
+
+        rows_done += 1
+        y += row_step
+
+    if rows_done <= 0 or not centers:
+        return {
+            "valid": False,
+            "quality": 0.0,
+            "pair_ratio": 0.0,
+            "center_px": float(img_cx),
+            "center_err_px": 0.0,
+            "symmetry_abs_px": float(img_w),
+        }
+
+    pair_ratio = pair_rows / float(rows_done)
+    center_px = float(median(centers))
+    center_err_px = center_px - float(img_cx)
+    symmetry_abs_px = abs(center_err_px)
+
+    pair_q = clamp(
+        (pair_ratio - BOTTOM_LOCK_MIN_PAIR_RATIO) / max(1.0 - BOTTOM_LOCK_MIN_PAIR_RATIO, 1e-6),
+        0.0,
+        1.0,
+    )
+    sym_q = 1.0 - clamp(symmetry_abs_px / max(BOTTOM_LOCK_SYM_TOL_PX * 2.0, 1e-6), 0.0, 1.0)
+    quality = clamp(0.65 * pair_q + 0.35 * sym_q, 0.0, 1.0)
+    valid = (pair_ratio >= BOTTOM_LOCK_MIN_PAIR_RATIO) and (symmetry_abs_px <= BOTTOM_LOCK_SYM_TOL_PX)
+
+    return {
+        "valid": valid,
+        "quality": quality,
+        "pair_ratio": pair_ratio,
+        "center_px": center_px,
+        "center_err_px": center_err_px,
+        "symmetry_abs_px": symmetry_abs_px,
+    }
+
+
 def single_band_mask(mask):
     return mask in (0x1, 0x2, 0x4)
 
@@ -946,12 +1030,15 @@ state = {
     "last_lane_width_px": float(LANE_WIDTH_INIT_PX),
     "track_dark_score": 0,
     "last_band_mask": 0,
+    "startup_frames": 0,
+    "last_bottom_lock_valid": False,
 }
 
 max_speed = MAX_SPEED
 print("line_follow_transfer: camera=%dx%d, timestep=%dms" % (img_w, img_h, timestep))
 
 while robot.step(timestep) != -1:
+    state["startup_frames"] += 1
     raw = camera.getImage()
     if raw is None:
         continue
@@ -1023,6 +1110,30 @@ while robot.step(timestep) != -1:
     band_mask = 0
     red_block_score = 0.0
     black_block_score = 0.0
+    bottom_pair_ratio = 0.0
+    bottom_sym_err_px = 0.0
+    center_lock_quality = 1.0
+    bottom_lock_valid = True
+
+    bottom_lock = detect_bottom_center_lock(
+        raw,
+        black_th,
+        img_w,
+        img_h,
+        img_cx,
+        track_is_dark,
+        state["last_lane_width_px"],
+    )
+    bottom_pair_ratio = float(bottom_lock.get("pair_ratio", 0.0))
+    bottom_sym_err_px = float(bottom_lock.get("center_err_px", 0.0))
+    center_lock_quality = float(bottom_lock.get("quality", 0.0))
+    bottom_lock_valid = bool(bottom_lock.get("valid", False))
+    if LOCK_REACQUIRE_RESET and bottom_lock_valid and (not state["last_bottom_lock_valid"]):
+        # Re-acquiring symmetric lock is a good moment to clear stale control memory.
+        state["integral"] = 0.0
+        state["last_err"] = 0.0
+        state["smoothed_err"] *= 0.35
+    state["last_bottom_lock_valid"] = bottom_lock_valid
 
     if roi_results:
         score_total = 0.0
@@ -1059,8 +1170,13 @@ while robot.step(timestep) != -1:
             near_err_cm = 0.68 * near_err_cm + 0.32 * state["last_base_err"]
             near_err_px = 0.68 * near_err_px + 0.32 * (state["last_lane_center_x"] - img_cx)
 
+        if bottom_pair_ratio > 0.0:
+            lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
+            near_err_px = (1.0 - lock_gain) * near_err_px + lock_gain * bottom_sym_err_px
+            near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
+
         far_dist_cm = far["dist_cm"]
-        state["last_lane_center_x"] = clamp(float(near["center_px"]), 0.0, float(img_w - 1))
+        state["last_lane_center_x"] = clamp(float(img_cx + near_err_px), 0.0, float(img_w - 1))
         state["last_lane_width_px"] = clamp(float(near["lane_width_px"]), float(MIN_TRACK_WIDTH), float(MAX_TRACK_WIDTH))
 
         base_err_cm = near_err_cm
@@ -1082,6 +1198,9 @@ while robot.step(timestep) != -1:
 
         curve_px = far_err_px - near_err_px
         avg_conf = sum((r["conf"] * result_quality_weight(r)) for r in roi_results) / float(len(roi_results))
+        if not bottom_lock_valid:
+            avg_conf *= (1.0 - BOTTOM_LOCK_CONF_PENALTY * (1.0 - center_lock_quality))
+            avg_conf = clamp(avg_conf, 0.0, 1.0)
 
         near_norm = near_err_px / max(0.5 * img_w, 1.0)
         far_norm = far_err_px / max(0.5 * img_w, 1.0)
@@ -1091,6 +1210,8 @@ while robot.step(timestep) != -1:
         curve_mode_force = abs(curve_px) >= CURVE_SWITCH_PX
         if single_band_mask(band_mask):
             curve_mode_force = curve_mode_force or (abs(angle_err) >= 8.0)
+        if (not bottom_lock_valid) and (bottom_pair_ratio > 0.0) and (abs(bottom_sym_err_px) > BOTTOM_LOCK_SYM_TOL_PX):
+            curve_mode_force = True
         curve_mode = 1 if curve_mode_force else 0
 
         # Pixel-domain center control: right-side line means negative steer (turn right).
@@ -1134,6 +1255,10 @@ while robot.step(timestep) != -1:
         speed_scale *= SPEED_LOST_SCALE
     blocker_ratio = clamp(max(red_block_score, black_block_score), 0.0, 1.0)
     speed_scale *= (1.0 - 0.35 * blocker_ratio)
+    speed_scale *= (1.0 - BOTTOM_LOCK_SPEED_PENALTY * (1.0 - center_lock_quality))
+    if STARTUP_SETTLE_FRAMES > 0 and state["startup_frames"] < STARTUP_SETTLE_FRAMES:
+        warmup = state["startup_frames"] / float(STARTUP_SETTLE_FRAMES)
+        speed_scale *= (STARTUP_SPEED_SCALE + (1.0 - STARTUP_SPEED_SCALE) * warmup)
     target_base_speed = clamp(BASE_SPEED * speed_scale, SPEED_MIN, BASE_SPEED)
 
     delta = clamp(steer * STEER_TO_WHEEL, -2.8, 2.8)
@@ -1147,7 +1272,7 @@ while robot.step(timestep) != -1:
     if now - state["last_print"] > 0.25:
         state["last_print"] = now
         print(
-            "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f"
+            "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f bp=%.2f sym=%.1f lock=%d cq=%.2f"
             % (
                 black_th,
                 steer,
@@ -1164,5 +1289,9 @@ while robot.step(timestep) != -1:
                 band_mask,
                 red_block_score,
                 black_block_score,
+                bottom_pair_ratio,
+                bottom_sym_err_px,
+                1 if bottom_lock_valid else 0,
+                center_lock_quality,
             )
         )

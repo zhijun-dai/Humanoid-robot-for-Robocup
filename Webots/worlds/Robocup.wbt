@@ -64,7 +64,7 @@ E-puck {
   controller "line_follow_transfer"
   turretSlot [
     Pose {
-      translation 0 0 0.3314
+      translation 0 0 0.38
       children [
         Camera {
           name "camera_ext"
