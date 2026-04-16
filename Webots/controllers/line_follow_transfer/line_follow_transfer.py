@@ -69,7 +69,7 @@ BAND_STEP_NEAR = int(_cfg_get(SHARED_CFG, "roi.band_step_down", 2))
 BAND_STEP_MID = int(_cfg_get(SHARED_CFG, "roi.band_step_mid", 2))
 BAND_STEP_FAR = int(_cfg_get(SHARED_CFG, "roi.band_step_up", 2))
 
-# Bottom lock and topology
+# Bottom lock
 BOTTOM_LOCK_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.bottom_lock_enable", True))
 BOTTOM_LOCK_START_RATIO = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_start_ratio", 0.80))
 BOTTOM_LOCK_ROWS = int(_cfg_get(SHARED_CFG, "roi.bottom_lock_rows", 12))
