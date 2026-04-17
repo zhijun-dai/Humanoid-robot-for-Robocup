@@ -82,6 +82,9 @@ BOTTOM_LOCK_SYM_TOL_PX = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_sym_tol_px"
 BOTTOM_LOCK_BLEND = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_blend", 0.55))
 BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_penalty", 0.45))
 BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.12))
+BOTTOM_LOCK_HARD_CENTER_ENABLE = bool(_cfg_get(SHARED_CFG, "roi.bottom_lock_hard_center_enable", True))
+BOTTOM_LOCK_HARD_CENTER_MIN_QUALITY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_hard_center_min_quality", 0.60))
+BOTTOM_LOCK_HARD_CENTER_MAX_ERR_PX = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_hard_center_max_err_px", 28.0))
 
 # Startup stabilization
 STARTUP_SETTLE_FRAMES = int(_cfg_get(SHARED_CFG, "roi.startup_settle_frames", 25))
@@ -94,9 +97,15 @@ PIX_LOOKAHEAD_GAIN = float(_cfg_get(SHARED_CFG, "webots.pixel_lookahead_gain", 0
 PIX_CURVE_GAIN = float(_cfg_get(SHARED_CFG, "webots.pixel_curve_gain", 0.22))
 PIX_ANGLE_GAIN = float(_cfg_get(SHARED_CFG, "webots.pixel_angle_gain", 0.08))
 CURVE_SWITCH_PX = float(_cfg_get(SHARED_CFG, "webots.curve_switch_px", 20.0))
-SWAP_GUARD_ENABLE = bool(_cfg_get(SHARED_CFG, "webots.swap_guard_enable", True))
+SWAP_GUARD_ENABLE = bool(_cfg_get(SHARED_CFG, "webots.swap_guard_enable", False))
 SWAP_GUARD_MAX_DELTA_PX = float(_cfg_get(SHARED_CFG, "webots.swap_guard_max_delta_px", 44.0))
 SWAP_GUARD_MID_NEAR_DELTA_PX = float(_cfg_get(SHARED_CFG, "webots.swap_guard_mid_near_delta_px", 18.0))
+TURN_STATE_ENABLE = bool(_cfg_get(SHARED_CFG, "webots.turn_state_enable", False))
+TURN_ENTER_PX = float(_cfg_get(SHARED_CFG, "webots.turn_enter_px", 14.0))
+TURN_EXIT_PX = float(_cfg_get(SHARED_CFG, "webots.turn_exit_px", 8.0))
+STRAIGHT_CENTER_PULL = float(_cfg_get(SHARED_CFG, "webots.straight_center_pull", 0.42))
+LEFT_TURN_CENTER_BIAS_PX = float(_cfg_get(SHARED_CFG, "webots.left_turn_center_bias_px", -7.0))
+RIGHT_TURN_CENTER_BIAS_PX = float(_cfg_get(SHARED_CFG, "webots.right_turn_center_bias_px", 7.0))
 
 KP_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.kp", 0.9))
 KI_STRAIGHT = float(_cfg_get(SHARED_CFG, "pid.straight.ki", 0.004))
@@ -589,6 +598,7 @@ state = {
     "last_lane_width_px": float(LANE_WIDTH_INIT_PX),
     "last_base_err_cm": 0.0,
     "last_far_dist_cm": 0.0,
+    "turn_state": 0,  # -1 right turn, 0 straight, +1 left turn
     "startup_frames": 0,
     "last_bottom_lock_valid": False,
 }
@@ -701,10 +711,19 @@ while robot.step(timestep) != -1:
         near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
 
         if bottom_pair_ratio > 0.0:
-            lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
-            if startup_active:
-                lock_gain = clamp(lock_gain + 0.20 * (1.0 - startup_warmup), 0.0, 0.92)
-            near_err_px = (1.0 - lock_gain) * near_err_px + lock_gain * bottom_sym_err_px
+            if (
+                BOTTOM_LOCK_HARD_CENTER_ENABLE
+                and bottom_lock_valid
+                and center_lock_quality >= BOTTOM_LOCK_HARD_CENTER_MIN_QUALITY
+                and abs(bottom_sym_err_px) <= BOTTOM_LOCK_HARD_CENTER_MAX_ERR_PX
+            ):
+                # User-preferred hard constraint: bottom dual-boundary center must align to image center.
+                near_err_px = bottom_sym_err_px
+            else:
+                lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
+                if startup_active:
+                    lock_gain = clamp(lock_gain + 0.20 * (1.0 - startup_warmup), 0.0, 0.92)
+                near_err_px = (1.0 - lock_gain) * near_err_px + lock_gain * bottom_sym_err_px
             near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
 
         far_ref = far if valid_far else (mid if valid_mid else near)
@@ -721,6 +740,25 @@ while robot.step(timestep) != -1:
         far_err_px = float(far_ref["center_px"] - img_cx)
         curve_px = far_err_px - near_err_px
         turn_gate = clamp(abs(curve_px) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
+
+        if TURN_STATE_ENABLE:
+            if abs(curve_px) >= TURN_ENTER_PX:
+                # curve_px < 0 => left curve, curve_px > 0 => right curve
+                state["turn_state"] = 1 if curve_px < 0.0 else -1
+            elif abs(curve_px) <= TURN_EXIT_PX:
+                state["turn_state"] = 0
+
+            if state["turn_state"] == 0:
+                # Straight: force dual-boundary center back to image middle.
+                near_err_px = (1.0 - STRAIGHT_CENTER_PULL) * near_err_px
+            elif state["turn_state"] > 0:
+                # Left turn: apply fixed center bias to avoid over-cutting inward.
+                near_err_px -= LEFT_TURN_CENTER_BIAS_PX
+            else:
+                # Right turn: symmetric fixed bias.
+                near_err_px -= RIGHT_TURN_CENTER_BIAS_PX
+
+            near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
 
         conf_list = [near["conf"]]
         if valid_mid:
@@ -769,6 +807,12 @@ while robot.step(timestep) != -1:
             steer *= RIGHT_TURN_SCALE
         steer = limit_steer_slew(steer, state["last_steer"], startup_active, startup_warmup)
 
+        # Anti-windup: prevent curve-phase integral accumulation from locking direction.
+        if abs(steer) >= (0.82 * STEER_SAT):
+            state["integral"] *= 0.72
+        if steer * state["smoothed_err"] < 0.0:
+            state["integral"] *= 0.86
+
         state["last_steer"] = steer
         state["last_lane_center_x"] = clamp(float(img_cx + near_err_px), 0.0, float(img_w - 1))
         state["last_lane_width_px"] = clamp(float(near["lane_width_px"]), float(MIN_TRACK_WIDTH), float(MAX_TRACK_WIDTH))
@@ -813,7 +857,7 @@ while robot.step(timestep) != -1:
     if now - state["last_print"] > 0.25:
         state["last_print"] = now
         print(
-            "th=%d steer=%.2f ex=%.2fcm z=%.2fcm tg=%.2f mode=%d conf=%.2f lost=%d L=%.2f R=%.2f expx=%.1f bp=%.2f sym=%.1f lock=%d cq=%.2f"
+            "th=%d steer=%.2f ex=%.2fcm z=%.2fcm tg=%.2f mode=%d ts=%d conf=%.2f lost=%d L=%.2f R=%.2f expx=%.1f bp=%.2f sym=%.1f lock=%d cq=%.2f"
             % (
                 black_th,
                 steer,
@@ -821,6 +865,7 @@ while robot.step(timestep) != -1:
                 far_dist_cm,
                 turn_gate,
                 curve_mode,
+                state["turn_state"],
                 avg_conf,
                 state["lost_frames"],
                 left_speed,

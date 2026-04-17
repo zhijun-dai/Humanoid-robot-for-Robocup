@@ -101,6 +101,9 @@
     "bottom_lock_blend": 0.55,
     "bottom_lock_conf_penalty": 0.45,
     "bottom_lock_speed_penalty": 0.12,
+    "bottom_lock_hard_center_enable": true,
+    "bottom_lock_hard_center_min_quality": 0.6,
+    "bottom_lock_hard_center_max_err_px": 28.0,
     "startup_settle_frames": 25,
     "startup_speed_scale": 0.75,
     "lock_reacquire_reset": true,
@@ -145,15 +148,15 @@
     "curve_switch_cm": 7.707,
     "straight": {
       "kp": 0.9,
-      "ki": 0.004,
+      "ki": 0.0015,
       "kd": 0.08
     },
     "curve": {
       "kp": 1.05,
-      "ki": 0.002,
+      "ki": 0.0008,
       "kd": 0.1
     },
-    "i_clamp": 60.0
+    "i_clamp": 22.0
   },
   "steer": {
     "sat": 45.0,
@@ -204,13 +207,19 @@
     "speed_steer_slowdown": 0.62,
     "pixel_lookahead_gain": 0.08,
     "pixel_curve_gain": 0.18,
-    "pixel_angle_gain": 0.08,
+    "pixel_angle_gain": 0.0,
     "curve_switch_px": 20.0,
-    "right_turn_scale": 0.72,
-    "left_turn_scale": 0.88,
-    "swap_guard_enable": true,
+    "right_turn_scale": 0.82,
+    "left_turn_scale": 0.82,
+    "swap_guard_enable": false,
     "swap_guard_max_delta_px": 44.0,
     "swap_guard_mid_near_delta_px": 18.0,
+    "turn_state_enable": false,
+    "turn_enter_px": 14.0,
+    "turn_exit_px": 8.0,
+    "straight_center_pull": 0.42,
+    "left_turn_center_bias_px": -7.0,
+    "right_turn_center_bias_px": 7.0,
     "startup_steer_max_delta": 5.5,
     "run_steer_max_delta": 14.0,
     "startup_integral_freeze_conf": 0.42,
