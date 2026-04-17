@@ -78,11 +78,11 @@ BOTTOM_LOCK_MIN_PAIR_RATIO = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_min_pai
 BOTTOM_LOCK_SYM_TOL_PX = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_sym_tol_px", 12.0))
 BOTTOM_LOCK_BLEND = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_blend", 0.55))
 BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_penalty", 0.45))
-BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.25))
+BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.12))
 
 # Startup stabilization
 STARTUP_SETTLE_FRAMES = int(_cfg_get(SHARED_CFG, "roi.startup_settle_frames", 25))
-STARTUP_SPEED_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_speed_scale", 0.55))
+STARTUP_SPEED_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_speed_scale", 0.75))
 LOCK_REACQUIRE_RESET = bool(_cfg_get(SHARED_CFG, "roi.lock_reacquire_reset", True))
 
 # Control gains
@@ -111,12 +111,12 @@ LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
 LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 11.0))
 LOST_PREFER_LEFT = bool(_cfg_get(SHARED_CFG, "lost.prefer_left", True))
 
-BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 6.28))
+BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 9.42))
 STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.0184))
-MAX_SPEED = float(_cfg_get(SHARED_CFG, "webots.max_speed", 6.28))
-SPEED_LOST_SCALE = float(_cfg_get(SHARED_CFG, "webots.speed_lost_scale", 0.85))
-SPEED_MIN = float(_cfg_get(SHARED_CFG, "webots.speed_min", 3.6))
-SPEED_STEER_SLOWDOWN = float(_cfg_get(SHARED_CFG, "webots.speed_steer_slowdown", 0.65))
+MAX_SPEED = float(_cfg_get(SHARED_CFG, "webots.max_speed", 9.42))
+SPEED_LOST_SCALE = float(_cfg_get(SHARED_CFG, "webots.speed_lost_scale", 0.92))
+SPEED_MIN = float(_cfg_get(SHARED_CFG, "webots.speed_min", 7.2))
+SPEED_STEER_SLOWDOWN = float(_cfg_get(SHARED_CFG, "webots.speed_steer_slowdown", 0.35))
 
 CAMERA_DEVICE_NAME = str(_cfg_get(SHARED_CFG, "webots.camera.device_name", "camera_ext"))
 
