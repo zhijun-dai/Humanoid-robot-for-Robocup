@@ -9,6 +9,16 @@ try:
 except ImportError:
 	import json  # type: ignore
 
+try:
+	from protocol_v2 import VisionProtocolV2, quantize_to_step  # type: ignore
+except Exception:
+	VisionProtocolV2 = None
+
+	def quantize_to_step(v, step):
+		if step <= 1:
+			return int(v)
+		return int(round(float(v) / float(step)) * float(step))
+
 
 def _cfg_get(cfg, path, default):
 	cur = cfg
@@ -41,7 +51,7 @@ SHARED_CFG = _load_shared_cfg()
 
 # ---------------------- 串口配置 ----------------------
 UART_ID = int(_cfg_get(SHARED_CFG, "output.uart.id", 1))
-UART_BAUD = int(_cfg_get(SHARED_CFG, "output.uart.baud", 9600))
+UART_BAUD = int(_cfg_get(SHARED_CFG, "output.uart.baud", 115200))
 uart = UART(UART_ID, UART_BAUD)
 
 ROUTE_GO = str(_cfg_get(SHARED_CFG, "output.route.go", "1"))
@@ -64,11 +74,11 @@ IMG_W = int(_cfg_get(SHARED_CFG, "base_frame.width", 160))
 IMG_H = int(_cfg_get(SHARED_CFG, "base_frame.height", 120))
 IMG_CX = IMG_W // 2
 
-# 相机几何模型（近似）：向下俯视约30度，建立像素行到地面距离映射。
-CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
-CAM_HEIGHT_CM = float(_cfg_get(SHARED_CFG, "camera.height_cm", 17.0))
-CAM_VFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.vfov_deg", 52.0))
-CAM_HFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.hfov_deg", 70.0))
+# 相机几何模型（近似）：默认按45度俯视，建立像素行到地面距离映射。
+CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 45.0))
+CAM_HEIGHT_CM = float(_cfg_get(SHARED_CFG, "camera.height_cm", 40.0))
+CAM_VFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.vfov_deg", 43.3))
+CAM_HFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.hfov_deg", 56.1))
 ROW_DIST_MIN_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_min_cm", 6.0))
 ROW_DIST_MAX_CM = float(_cfg_get(SHARED_CFG, "camera.row_dist_max_cm", 300.0))
 
@@ -132,8 +142,29 @@ LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
 LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 26))
 
 # 输出节流。
-SEND_INTERVAL_MS = int(_cfg_get(SHARED_CFG, "output.send_interval_ms", 70))
+SEND_INTERVAL_MS = int(_cfg_get(SHARED_CFG, "output.send_interval_ms", 100))
 last_send_ms = 0
+
+# 协议V2配置（优先使用完整帧；失败时退回单字符兼容发送）。
+PROTOCOL_VERSION = int(_cfg_get(SHARED_CFG, "output.protocol.version", 2))
+CTRL_HZ = int(_cfg_get(SHARED_CFG, "output.protocol.ctrl_hz", 10))
+HEARTBEAT_HZ = int(_cfg_get(SHARED_CFG, "output.protocol.heartbeat_hz", 10))
+CTRL_INTERVAL_MS = int(1000 / max(1, CTRL_HZ))
+HEARTBEAT_INTERVAL_MS = int(1000 / max(1, HEARTBEAT_HZ))
+CONF_STEP = int(_cfg_get(SHARED_CFG, "output.protocol.conf_quant_step", 5))
+EX_STEP_MM = int(_cfg_get(SHARED_CFG, "output.protocol.ex_quant_step_mm", 10))
+ANG_STEP_CDEG = int(_cfg_get(SHARED_CFG, "output.protocol.ang_quant_step_cdeg", 100))
+MODE_IDLE = int(_cfg_get(SHARED_CFG, "output.protocol.mode_idle", 0))
+MODE_LINE_FOLLOW = int(_cfg_get(SHARED_CFG, "output.protocol.mode_line_follow", 1))
+MODE_LOST_SEARCH = int(_cfg_get(SHARED_CFG, "output.protocol.mode_lost_search", 2))
+protocol = None
+if VisionProtocolV2 is not None:
+	try:
+		protocol = VisionProtocolV2(version=PROTOCOL_VERSION)
+	except Exception:
+		protocol = None
+last_ctrl_ms = 0
+last_heartbeat_ms = 0
 
 
 # ---------------------- 运行状态 ----------------------
@@ -237,6 +268,20 @@ def now_ms():
 
 def send_route_cmd(ch):
 	uart.write(ch)
+
+
+def route_to_u8(cmd):
+	try:
+		return int(cmd)
+	except Exception:
+		pass
+	if cmd == ROUTE_LEFT:
+		return 2
+	if cmd == ROUTE_RIGHT:
+		return 3
+	if cmd == ROUTE_SLIGHT_LEFT:
+		return 4
+	return 1
 
 
 def adaptive_black_threshold(img):
@@ -506,14 +551,45 @@ while True:
 				steer = -LOST_SEARCH_TURN
 
 	cmd = steer_to_cmd(steer)
+	route_u8 = route_to_u8(cmd)
+	mode_u8 = MODE_LOST_SEARCH if lost_frames > 0 else MODE_LINE_FOLLOW
+	conf_u8 = int(clamp(avg_conf * 100.0, 0.0, 100.0))
+	conf_u8 = int(clamp(quantize_to_step(conf_u8, CONF_STEP), 0, 100))
+	lost_u8 = 1 if lost_frames > 0 else 0
+	ex_mm = int(quantize_to_step(int(base_err_cm * 10.0), EX_STEP_MM))
+	ang_cdeg = int(quantize_to_step(int(angle_err * 100.0), ANG_STEP_CDEG))
 
-	# 发送节流，避免串口刷爆主控。
+	# 发送：优先协议V2；若不可用则回退到单字符路由。
 	n = now_ms()
-	if time.ticks_diff(n, last_send_ms) >= SEND_INTERVAL_MS:
-		send_route_cmd(cmd)
-		last_send_ms = n
+	if protocol is not None:
+		if time.ticks_diff(n, last_heartbeat_ms) >= HEARTBEAT_INTERVAL_MS:
+			try:
+				uart.write(protocol.build_heartbeat(mode_u8))
+				last_heartbeat_ms = n
+			except Exception:
+				pass
+		if time.ticks_diff(n, last_ctrl_ms) >= CTRL_INTERVAL_MS:
+			try:
+				frame = protocol.build_line_ctrl(
+					mode_u8=mode_u8,
+					conf_u8=conf_u8,
+					lost_u8=lost_u8,
+					route_u8=route_u8,
+					ex_mm_i16=ex_mm,
+					ang_cdeg_i16=ang_cdeg,
+					v_cmd_mmps_i16=0,
+					w_cmd_mradps_i16=0,
+				)
+				uart.write(frame)
+				last_ctrl_ms = n
+			except Exception:
+				pass
+	else:
+		if time.ticks_diff(n, last_send_ms) >= SEND_INTERVAL_MS:
+			send_route_cmd(cmd)
+			last_send_ms = n
 
 	print(
-		"th=%d steer=%.1f ex=%.1fcm ang=%.1fdeg z=%.1fcm tg=%.2f mode=%d conf=%.2f cmd=%s lost=%d fps=%.1f"
-		% (black_th, steer, base_err_cm, angle_err, far_dist_cm, turn_gate, curve_mode, avg_conf, cmd, lost_frames, clock.fps())
+		"th=%d steer=%.1f ex=%.1fcm ang=%.1fdeg z=%.1fcm tg=%.2f mode=%d conf=%.2f route=%d lost=%d fps=%.1f"
+		% (black_th, steer, base_err_cm, angle_err, far_dist_cm, turn_gate, curve_mode, avg_conf, route_u8, lost_frames, clock.fps())
 	)
