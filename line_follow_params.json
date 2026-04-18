@@ -101,7 +101,7 @@
     "bottom_lock_blend": 0.55,
     "bottom_lock_conf_penalty": 0.45,
     "bottom_lock_heavy_factor": 1.45,
-    "bottom_lock_left_turn_extra": 0.30,
+    "bottom_lock_curve_extra": 0.30,
     "bottom_lock_max_gain": 0.95,
     "bottom_lock_speed_penalty": 0.12,
     "startup_settle_frames": 25,
@@ -115,10 +115,13 @@
     "lane_width_tol_px": 60,
     "max_center_jump_px": 80,
     "min_pair_lines": 1,
-    "min_pair_ratio": 0.2,
+    "min_pair_ratio": 0.26,
+    "near_conf_target": 0.30,
+    "near_pair_target": 0.45,
+    "near_trust_floor": 0.25,
     "min_valid_lines": 2,
     "width_std_max": 28,
-    "conf_min": 0.06
+    "conf_min": 0.10
   },
   "threshold": {
     "offset": 8,
@@ -163,7 +166,8 @@
   "lost": {
     "hold_frames": 6,
     "search_turn": 11.0,
-    "prefer_left": true
+    "prefer_left": true,
+    "search_follow_last_steer": true
   },
   "output": {
     "send_interval_ms": 100,
@@ -205,7 +209,7 @@
     "pixel_lookahead_gain": 0.08,
     "pixel_curve_gain": 0.22,
     "curve_switch_px": 20.0,
-    "right_turn_scale": 0.55,
+    "right_turn_scale": 1.0,
     "startup_steer_max_delta": 5.5,
     "run_steer_max_delta": 14.0,
     "startup_integral_freeze_conf": 0.42,

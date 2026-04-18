@@ -57,6 +57,9 @@ MAX_CENTER_JUMP_PX = float(_cfg_get(SHARED_CFG, "roi.max_center_jump_px", 80.0))
 MIN_PAIR_LINES = int(_cfg_get(SHARED_CFG, "roi.min_pair_lines", 2))
 MIN_PAIR_RATIO = float(_cfg_get(SHARED_CFG, "roi.min_pair_ratio", 0.25))
 CONF_MIN = float(_cfg_get(SHARED_CFG, "roi.conf_min", 0.08))
+NEAR_CONF_TARGET = float(_cfg_get(SHARED_CFG, "roi.near_conf_target", 0.30))
+NEAR_PAIR_TARGET = float(_cfg_get(SHARED_CFG, "roi.near_pair_target", 0.45))
+NEAR_TRUST_FLOOR = float(_cfg_get(SHARED_CFG, "roi.near_trust_floor", 0.25))
 
 # Three vertical bands
 BAND_NEAR_START = float(_cfg_get(SHARED_CFG, "roi.band_down_start_ratio", 2.0 / 3.0))
@@ -80,7 +83,9 @@ BOTTOM_LOCK_BLEND = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_blend", 0.55))
 BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_penalty", 0.45))
 BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.12))
 BOTTOM_LOCK_HEAVY_FACTOR = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_heavy_factor", 1.35))
-BOTTOM_LOCK_LEFT_TURN_EXTRA = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_left_turn_extra", 0.22))
+BOTTOM_LOCK_CURVE_EXTRA = float(
+    _cfg_get(SHARED_CFG, "roi.bottom_lock_curve_extra", _cfg_get(SHARED_CFG, "roi.bottom_lock_left_turn_extra", 0.22))
+)
 BOTTOM_LOCK_MAX_GAIN = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_max_gain", 0.95))
 
 # Startup stabilization
@@ -104,7 +109,6 @@ I_CLAMP = float(_cfg_get(SHARED_CFG, "pid.i_clamp", 60.0))
 
 STEER_SAT = float(_cfg_get(SHARED_CFG, "steer.sat", 45.0))
 STEER_SCALE = float(_cfg_get(SHARED_CFG, "steer.scale", 0.6))
-RIGHT_TURN_SCALE = float(_cfg_get(SHARED_CFG, "webots.right_turn_scale", 0.55))
 STARTUP_STEER_MAX_DELTA = float(_cfg_get(SHARED_CFG, "webots.startup_steer_max_delta", 5.5))
 RUN_STEER_MAX_DELTA = float(_cfg_get(SHARED_CFG, "webots.run_steer_max_delta", 14.0))
 STARTUP_INTEGRAL_FREEZE_CONF = float(_cfg_get(SHARED_CFG, "webots.startup_integral_freeze_conf", 0.42))
@@ -113,6 +117,7 @@ STARTUP_INTEGRAL_FREEZE_CONF = float(_cfg_get(SHARED_CFG, "webots.startup_integr
 LOST_HOLD_FRAMES = int(_cfg_get(SHARED_CFG, "lost.hold_frames", 6))
 LOST_SEARCH_TURN = float(_cfg_get(SHARED_CFG, "lost.search_turn", 11.0))
 LOST_PREFER_LEFT = bool(_cfg_get(SHARED_CFG, "lost.prefer_left", True))
+LOST_SEARCH_FOLLOW_LAST_STEER = bool(_cfg_get(SHARED_CFG, "lost.search_follow_last_steer", True))
 
 BASE_SPEED = float(_cfg_get(SHARED_CFG, "webots.base_speed", 9.42))
 STEER_TO_WHEEL = float(_cfg_get(SHARED_CFG, "webots.steer_to_wheel", 0.0184))
@@ -508,6 +513,12 @@ def compute_target_base_speed(steer, lost_frames, center_lock_quality, startup_a
     return clamp(BASE_SPEED * speed_scale, SPEED_MIN, BASE_SPEED)
 
 
+def compute_near_trust(near_conf, near_pair_ratio):
+    conf_q = clamp((near_conf - CONF_MIN) / max(NEAR_CONF_TARGET - CONF_MIN, 1e-6), 0.0, 1.0)
+    pair_q = clamp((near_pair_ratio - MIN_PAIR_RATIO) / max(NEAR_PAIR_TARGET - MIN_PAIR_RATIO, 1e-6), 0.0, 1.0)
+    return clamp(0.5 * conf_q + 0.5 * pair_q, NEAR_TRUST_FLOOR, 1.0)
+
+
 robot = Robot()
 timestep = int(robot.getBasicTimeStep())
 
@@ -663,11 +674,12 @@ while robot.step(timestep) != -1:
 
         if bottom_pair_ratio > 0.0:
             lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
-            if bottom_lock_valid:
-                lock_gain *= BOTTOM_LOCK_HEAVY_FACTOR
-                turn_strength = clamp(abs(curve_px_raw) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
-                if curve_px_raw < 0.0:
-                    lock_gain += BOTTOM_LOCK_LEFT_TURN_EXTRA * turn_strength
+            # Symmetric bottom-lock strengthening: no left/right special-casing.
+            lock_gain *= (1.0 + (BOTTOM_LOCK_HEAVY_FACTOR - 1.0) * center_lock_quality)
+            turn_strength = clamp(abs(curve_px_raw) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
+            lock_gain += BOTTOM_LOCK_CURVE_EXTRA * turn_strength * center_lock_quality
+            lock_valid_gate = 1.0 if bottom_lock_valid else 0.55
+            lock_gain *= lock_valid_gate
             if startup_active:
                 lock_gain = clamp(lock_gain + 0.20 * (1.0 - startup_warmup), 0.0, BOTTOM_LOCK_MAX_GAIN)
             else:
@@ -692,8 +704,9 @@ while robot.step(timestep) != -1:
         near_norm = near_err_px / norm_den
         far_norm = far_err_px / norm_den
         curve_norm = curve_px / norm_den
+        near_trust = compute_near_trust(float(near["conf"]), float(near["pair_ratio"]))
 
-        fused_err = -near_norm
+        fused_err = -(near_trust * near_norm + (1.0 - near_trust) * far_norm)
         fused_err += PIX_LOOKAHEAD_GAIN * (-far_norm)
         fused_err += PIX_CURVE_GAIN * (-curve_norm)
 
@@ -705,8 +718,6 @@ while robot.step(timestep) != -1:
         curve_mode_force = abs(curve_px) >= CURVE_SWITCH_PX
         pid_out = pid_step(state["smoothed_err"], dt, state, curve_mode_force)
         steer = nonlinear_map(pid_out)
-        if steer < 0.0:
-            steer *= RIGHT_TURN_SCALE
         steer = limit_steer_slew(steer, state["last_steer"], startup_active, startup_warmup)
 
         state["last_steer"] = steer
@@ -734,7 +745,14 @@ while robot.step(timestep) != -1:
         if state["lost_frames"] <= LOST_HOLD_FRAMES:
             steer = state["last_steer"] * 0.85
         else:
-            steer = abs(LOST_SEARCH_TURN) if LOST_PREFER_LEFT else -abs(LOST_SEARCH_TURN)
+            if LOST_SEARCH_FOLLOW_LAST_STEER and abs(state["last_steer"]) > 1.0:
+                search_mag = abs(LOST_SEARCH_TURN)
+                if state["last_steer"] >= 0.0:
+                    steer = search_mag
+                else:
+                    steer = -search_mag
+            else:
+                steer = abs(LOST_SEARCH_TURN) if LOST_PREFER_LEFT else -abs(LOST_SEARCH_TURN)
 
     target_base_speed = compute_target_base_speed(
         steer,
