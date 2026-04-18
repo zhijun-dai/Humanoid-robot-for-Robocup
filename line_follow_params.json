@@ -104,8 +104,8 @@
     "bottom_lock_curve_extra": 0.30,
     "bottom_lock_max_gain": 0.95,
     "bottom_lock_speed_penalty": 0.12,
-    "startup_settle_frames": 25,
-    "startup_speed_scale": 0.75,
+    "startup_settle_frames": 60,
+    "startup_speed_scale": 0.45,
     "lock_reacquire_reset": true,
     "min_line_width": 2,
     "max_line_width": 95,
@@ -128,7 +128,7 @@
     "min": 25,
     "max": 120,
     "dark_margin": 10,
-    "track_color": "auto"
+    "track_color": "dark"
   },
   "preprocess": {
     "use_histeq": true,
@@ -160,7 +160,7 @@
   },
   "steer": {
     "sat": 45.0,
-    "scale": 0.6,
+    "scale": 1.2,
     "deadband": 6.0
   },
   "lost": {
@@ -205,7 +205,7 @@
     "max_speed": 6.28,
     "speed_turn_slowdown": 0.2,
     "speed_lost_scale": 0.92,
-    "speed_min": 3.8,
+    "speed_min": 2.6,
     "speed_steer_slowdown": 0.62,
     "pixel_lookahead_gain": 0.08,
     "pixel_curve_gain": 0.22,
