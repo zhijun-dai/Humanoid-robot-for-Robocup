@@ -79,9 +79,6 @@ BOTTOM_LOCK_SYM_TOL_PX = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_sym_tol_px"
 BOTTOM_LOCK_BLEND = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_blend", 0.55))
 BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_penalty", 0.45))
 BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.12))
-BOTTOM_LOCK_HEAVY_FACTOR = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_heavy_factor", 1.35))
-BOTTOM_LOCK_LEFT_TURN_EXTRA = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_left_turn_extra", 0.22))
-BOTTOM_LOCK_MAX_GAIN = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_max_gain", 0.95))
 
 # Startup stabilization
 STARTUP_SETTLE_FRAMES = int(_cfg_get(SHARED_CFG, "roi.startup_settle_frames", 25))
@@ -653,28 +650,18 @@ while robot.step(timestep) != -1:
     if valid_near:
         state["lost_frames"] = 0
 
-        near_err_px_raw = float(near["center_px"] - img_cx)
-        near_err_px = near_err_px_raw
+        near_err_px = float(near["center_px"] - img_cx)
         near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
-
-        far_ref = far if valid_far else (mid if valid_mid else near)
-        far_err_px = float(far_ref["center_px"] - img_cx)
-        curve_px_raw = far_err_px - near_err_px_raw
 
         if bottom_pair_ratio > 0.0:
             lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
-            if bottom_lock_valid:
-                lock_gain *= BOTTOM_LOCK_HEAVY_FACTOR
-                turn_strength = clamp(abs(curve_px_raw) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
-                if curve_px_raw < 0.0:
-                    lock_gain += BOTTOM_LOCK_LEFT_TURN_EXTRA * turn_strength
             if startup_active:
-                lock_gain = clamp(lock_gain + 0.20 * (1.0 - startup_warmup), 0.0, BOTTOM_LOCK_MAX_GAIN)
-            else:
-                lock_gain = clamp(lock_gain, 0.0, BOTTOM_LOCK_MAX_GAIN)
-            near_err_px = (1.0 - lock_gain) * near_err_px_raw + lock_gain * bottom_sym_err_px
+                lock_gain = clamp(lock_gain + 0.20 * (1.0 - startup_warmup), 0.0, 0.92)
+            near_err_px = (1.0 - lock_gain) * near_err_px + lock_gain * bottom_sym_err_px
             near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
 
+        far_ref = far if valid_far else (mid if valid_mid else near)
+        far_err_px = float(far_ref["center_px"] - img_cx)
         curve_px = far_err_px - near_err_px
         turn_gate = clamp(abs(curve_px) / max(CURVE_SWITCH_PX, 1.0), 0.0, 1.0)
 
