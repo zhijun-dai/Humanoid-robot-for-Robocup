@@ -1,0 +1,30 @@
+{
+  "log": "D:\\用户\\Lenovo\\桌面\\Robocup\\generated\\manual_webots_logs_v19\\trial_000.log",
+  "thresholds": {
+    "in_lane_abs_ex_cm": 8.0,
+    "in_lane_min_conf": 0.2
+  },
+  "metrics": {
+    "samples": 27,
+    "valid_ratio": 1.0,
+    "lost_ratio": 0.0,
+    "mean_abs_ex_cm": 6.825555555555555,
+    "p95_abs_ex_cm": 9.29,
+    "mean_abs_ang_deg": 35.64074074074074,
+    "mean_conf": 0.55,
+    "mean_speed": 5.614814814814815,
+    "low_speed_ratio_v_lt_1_2": 0.0,
+    "in_lane_ratio": 0.48148148148148145,
+    "out_lane_ratio": 0.5185185185185185,
+    "max_out_lane_streak_frames": 14,
+    "max_out_lane_streak_sec": 3.5
+  },
+  "grades": {
+    "lost": "A",
+    "offset": "B",
+    "confidence": "B",
+    "speed": "A",
+    "in_lane": "C"
+  },
+  "verdict": "OK"
+}

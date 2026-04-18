@@ -1,0 +1,15 @@
+{
+  "log": "D:\\用户\\Lenovo\\桌面\\Robocup\\generated\\manual_webots_logs_v16b\\trial_000.log",
+  "thresholds": {},
+  "metrics": {
+    "samples": 0,
+    "in_lane_ratio": 0.0,
+    "lost_ratio": 1.0,
+    "mean_abs_ex_cm": 999.0,
+    "mean_conf": 0.0,
+    "mean_speed": 0.0
+  },
+  "grades": {},
+  "verdict": "POOR",
+  "error": "evaluate_line_follow_log.py failed or no telemetry rows parsed"
+}

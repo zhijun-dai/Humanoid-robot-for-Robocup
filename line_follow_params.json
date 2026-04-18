@@ -115,13 +115,13 @@
     "lane_width_tol_px": 60,
     "max_center_jump_px": 80,
     "min_pair_lines": 1,
-    "min_pair_ratio": 0.26,
+    "min_pair_ratio": 0.20,
     "near_conf_target": 0.30,
     "near_pair_target": 0.45,
     "near_trust_floor": 0.25,
     "min_valid_lines": 2,
     "width_std_max": 28,
-    "conf_min": 0.10
+    "conf_min": 0.06
   },
   "threshold": {
     "offset": 8,
@@ -166,6 +166,7 @@
   "lost": {
     "hold_frames": 6,
     "search_turn": 11.0,
+    "recover_gain": 0.55,
     "prefer_left": true,
     "search_follow_last_steer": true
   },
