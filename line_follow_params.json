@@ -98,7 +98,7 @@
     "bottom_lock_step": 2,
     "bottom_lock_min_pair_ratio": 0.55,
     "bottom_lock_sym_tol_px": 12.0,
-    "bottom_lock_blend": 0.55,
+    "bottom_lock_blend": 0.20,
     "bottom_lock_conf_penalty": 0.45,
     "bottom_lock_heavy_factor": 1.45,
     "bottom_lock_curve_extra": 0.30,
@@ -160,7 +160,7 @@
   },
   "steer": {
     "sat": 45.0,
-    "scale": 1.2,
+    "scale": 0.6,
     "deadband": 6.0
   },
   "lost": {
