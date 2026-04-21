@@ -1,0 +1,26 @@
+line_follow_transfer: camera=320x240, timestep=32ms, log=D:\用户\Lenovo\桌面\Robocup\generated\manual_webots_logs_live\autorun\iter1b_20260419_232756.log
+th=97 steer=17.41 ex=-7.539cm ang=-3.26deg z=58.92cm tg=0.481 mode=1 conf=0.420 lost=0 L=2.280 R=2.920 expx=-24.63 bmask=0 red=0.00 blk=0.00 bp=0.25 sym=-35.5 lock=0 cq=0.00
+th=97 steer=12.92 ex=-5.924cm ang=-1.14deg z=58.92cm tg=0.026 mode=0 conf=0.348 lost=0 L=2.362 R=2.838 expx=-29.65 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=10.23 ex=-4.570cm ang=-3.06deg z=58.92cm tg=0.021 mode=0 conf=0.362 lost=0 L=2.688 R=3.064 expx=-23.16 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=7.73 ex=-3.495cm ang=-2.33deg z=58.92cm tg=0.019 mode=0 conf=0.342 lost=0 L=3.211 R=3.496 expx=-17.51 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=5.80 ex=-2.623cm ang=-0.91deg z=58.92cm tg=0.011 mode=0 conf=0.341 lost=0 L=3.719 R=3.933 expx=-13.21 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=4.12 ex=-1.935cm ang=0.10deg z=58.92cm tg=0.013 mode=0 conf=0.343 lost=0 L=4.229 R=4.381 expx=-9.77 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=93 steer=3.90 ex=-1.437cm ang=-6.18deg z=58.92cm tg=0.005 mode=0 conf=0.345 lost=0 L=4.631 R=4.774 expx=-7.35 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=96 steer=2.96 ex=-1.051cm ang=-4.65deg z=58.92cm tg=0.002 mode=0 conf=0.345 lost=0 L=5.101 R=5.210 expx=-5.53 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=90 steer=-5.15 ex=-1.656cm ang=34.56deg z=18.94cm tg=1.000 mode=1 conf=0.357 lost=0 L=5.229 R=5.040 expx=-9.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=-2.17 ex=-2.387cm ang=36.56deg z=18.94cm tg=1.000 mode=1 conf=0.354 lost=0 L=5.401 R=5.321 expx=-12.38 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=99 steer=0.15 ex=-2.979cm ang=38.91deg z=18.94cm tg=1.000 mode=1 conf=0.351 lost=0 L=5.513 R=5.518 expx=-15.12 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=96 steer=2.06 ex=-3.435cm ang=39.49deg z=18.94cm tg=1.000 mode=1 conf=0.340 lost=0 L=5.331 R=5.407 expx=-17.75 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=3.31 ex=-3.818cm ang=40.92deg z=18.94cm tg=0.875 mode=0 conf=0.335 lost=0 L=5.214 R=5.335 expx=-19.75 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=96 steer=4.66 ex=-4.214cm ang=41.23deg z=18.94cm tg=0.600 mode=0 conf=0.261 lost=0 L=5.086 R=5.258 expx=-21.25 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=95 steer=5.55 ex=-4.461cm ang=42.22deg z=19.09cm tg=0.506 mode=0 conf=0.220 lost=0 L=5.002 R=5.206 expx=-23.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=6.12 ex=-4.782cm ang=41.90deg z=19.24cm tg=0.644 mode=0 conf=0.196 lost=0 L=4.947 R=5.173 expx=-25.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=94 steer=6.20 ex=-4.979cm ang=42.55deg z=19.40cm tg=0.750 mode=0 conf=0.176 lost=0 L=4.940 R=5.168 expx=-26.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=7.38 ex=-5.218cm ang=42.62deg z=19.40cm tg=0.575 mode=0 conf=0.148 lost=0 L=4.828 R=5.100 expx=-27.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=96 steer=7.66 ex=-5.406cm ang=43.36deg z=19.56cm tg=0.550 mode=0 conf=0.114 lost=0 L=4.802 R=5.084 expx=-28.25 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=8.22 ex=-5.521cm ang=43.53deg z=19.56cm tg=0.450 mode=0 conf=0.114 lost=0 L=4.750 R=5.052 expx=-29.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=9.26 ex=-5.658cm ang=44.14deg z=19.71cm tg=0.250 mode=0 conf=0.110 lost=0 L=4.651 R=4.992 expx=-29.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=6.35 ex=-4.459cm ang=53.34deg z=19.71cm tg=0.225 mode=0 conf=0.110 lost=0 L=4.927 R=5.160 expx=-23.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=6.94 ex=-4.648cm ang=53.73deg z=19.87cm tg=0.188 mode=0 conf=0.106 lost=0 L=4.870 R=5.126 expx=-24.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=91 steer=7.54 ex=-4.838cm ang=54.07deg z=20.03cm tg=0.250 mode=0 conf=0.103 lost=0 L=4.814 R=5.091 expx=-25.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=94 steer=6.96 ex=-5.028cm ang=54.51deg z=20.03cm tg=0.650 mode=0 conf=0.103 lost=0 L=4.868 R=5.124 expx=-26.50 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00

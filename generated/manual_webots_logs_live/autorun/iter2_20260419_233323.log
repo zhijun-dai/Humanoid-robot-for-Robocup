@@ -1,0 +1,10 @@
+line_follow_transfer: camera=320x240, timestep=32ms, log=D:\用户\Lenovo\桌面\Robocup\generated\manual_webots_logs_live\autorun\iter2_20260419_233323.log
+th=97 steer=17.41 ex=-7.539cm ang=-3.26deg z=58.92cm tg=0.481 mode=1 conf=0.420 lost=0 L=2.280 R=2.920 expx=-24.63 bmask=0 red=0.00 blk=0.00 bp=0.25 sym=-35.5 lock=0 cq=0.00
+th=97 steer=12.92 ex=-5.924cm ang=-1.14deg z=58.92cm tg=0.026 mode=0 conf=0.348 lost=0 L=2.362 R=2.838 expx=-29.65 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=10.23 ex=-4.570cm ang=-3.06deg z=58.92cm tg=0.021 mode=0 conf=0.362 lost=0 L=2.688 R=3.064 expx=-23.16 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=7.73 ex=-3.495cm ang=-2.33deg z=58.92cm tg=0.019 mode=0 conf=0.342 lost=0 L=3.211 R=3.496 expx=-17.51 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=98 steer=5.80 ex=-2.623cm ang=-0.91deg z=58.92cm tg=0.011 mode=0 conf=0.341 lost=0 L=3.719 R=3.933 expx=-13.21 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=97 steer=4.12 ex=-1.935cm ang=0.10deg z=58.92cm tg=0.013 mode=0 conf=0.343 lost=0 L=4.229 R=4.381 expx=-9.77 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=93 steer=3.90 ex=-1.437cm ang=-6.18deg z=58.92cm tg=0.005 mode=0 conf=0.345 lost=0 L=4.631 R=4.774 expx=-7.35 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=96 steer=2.96 ex=-1.051cm ang=-4.65deg z=58.92cm tg=0.002 mode=0 conf=0.345 lost=0 L=5.101 R=5.210 expx=-5.53 bmask=0 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00
+th=90 steer=-5.15 ex=-1.656cm ang=34.56deg z=18.94cm tg=1.000 mode=1 conf=0.357 lost=0 L=5.229 R=5.040 expx=-9.00 bmask=7 red=0.00 blk=0.00 bp=0.00 sym=0.0 lock=0 cq=0.00

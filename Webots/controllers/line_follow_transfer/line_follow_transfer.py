@@ -2,6 +2,7 @@ from controller import Robot
 import math
 import os
 import json
+import atexit
 
 
 def _cfg_get(cfg, path, default):
@@ -30,6 +31,46 @@ def _load_shared_cfg():
 
 
 SHARED_CFG = _load_shared_cfg()
+
+
+def _open_optional_runtime_log():
+    log_path = str(os.environ.get("LINE_FOLLOW_LOG_FILE", "")).strip()
+    if not log_path:
+        return None, ""
+    try:
+        parent = os.path.dirname(log_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        fh = open(log_path, "a", encoding="utf-8")
+        return fh, log_path
+    except Exception:
+        return None, ""
+
+
+_RUNTIME_LOG_FH, _RUNTIME_LOG_PATH = _open_optional_runtime_log()
+
+
+def _close_optional_runtime_log():
+    if _RUNTIME_LOG_FH is None:
+        return
+    try:
+        _RUNTIME_LOG_FH.close()
+    except Exception:
+        pass
+
+
+atexit.register(_close_optional_runtime_log)
+
+
+def _emit_log(msg):
+    print(msg)
+    if _RUNTIME_LOG_FH is None:
+        return
+    try:
+        _RUNTIME_LOG_FH.write(msg + "\n")
+        _RUNTIME_LOG_FH.flush()
+    except Exception:
+        pass
 
 # Core parameters migrated from CVpart/main/main1.py
 CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
@@ -135,6 +176,10 @@ BOTTOM_LOCK_CONF_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_conf_pena
 BOTTOM_LOCK_SPEED_PENALTY = float(_cfg_get(SHARED_CFG, "roi.bottom_lock_speed_penalty", 0.25))
 STARTUP_SETTLE_FRAMES = int(_cfg_get(SHARED_CFG, "roi.startup_settle_frames", 25))
 STARTUP_SPEED_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_speed_scale", 0.55))
+STARTUP_CONF_MIN_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_conf_min_scale", 0.70))
+STARTUP_MIN_WEIGHT_SCALE = float(_cfg_get(SHARED_CFG, "roi.startup_min_weight_scale", 0.70))
+STARTUP_FORCE_SIMPLE_BOTTOM = bool(_cfg_get(SHARED_CFG, "roi.startup_force_simple_bottom", True))
+STARTUP_LOST_BIAS_FREE = bool(_cfg_get(SHARED_CFG, "roi.startup_lost_bias_free", True))
 LOCK_REACQUIRE_RESET = bool(_cfg_get(SHARED_CFG, "roi.lock_reacquire_reset", True))
 
 CURVE_SWITCH_CM = float(_cfg_get(SHARED_CFG, "pid.curve_switch_cm", 4.5))
@@ -1017,7 +1062,10 @@ state = {
 }
 
 max_speed = MAX_SPEED
-print("line_follow_transfer: camera=%dx%d, timestep=%dms" % (img_w, img_h, timestep))
+if _RUNTIME_LOG_PATH:
+    _emit_log("line_follow_transfer: camera=%dx%d, timestep=%dms, log=%s" % (img_w, img_h, timestep, _RUNTIME_LOG_PATH))
+else:
+    _emit_log("line_follow_transfer: camera=%dx%d, timestep=%dms" % (img_w, img_h, timestep))
 
 while robot.step(timestep) != -1:
     state["startup_frames"] += 1
@@ -1033,8 +1081,54 @@ while robot.step(timestep) != -1:
         state["track_dark_score"] = int(clamp(state["track_dark_score"] - 1, -6, 6))
     track_is_dark = state["track_dark_score"] >= 0
 
+    startup_active = (STARTUP_SETTLE_FRAMES > 0) and (state["startup_frames"] < STARTUP_SETTLE_FRAMES)
+    if startup_active:
+        conf_min_dyn = CONF_MIN * clamp(STARTUP_CONF_MIN_SCALE, 0.20, 1.00)
+        min_weight_dyn = MIN_WEIGHT * clamp(STARTUP_MIN_WEIGHT_SCALE, 0.20, 1.00)
+    else:
+        conf_min_dyn = CONF_MIN
+        min_weight_dyn = MIN_WEIGHT
+
+    if startup_active:
+        # Startup phase: avoid stale geometric prior, start from camera center with no width hint.
+        scan_hint_center = float(img_cx)
+        scan_hint_width = 0.0
+    else:
+        scan_hint_center = state["last_lane_center_x"]
+        scan_hint_width = state["last_lane_width_px"]
+
     roi_results = []
-    if THREE_BAND_MODE:
+    if startup_active and STARTUP_FORCE_SIMPLE_BOTTOM:
+        # Startup phase: prefer a near-field simple detector first to reduce multi-band ambiguity.
+        res = bottom_quarter_midline(
+            raw,
+            black_th,
+            img_w,
+            img_h,
+            img_cx,
+            row_cm_per_px,
+            row_distance_cm,
+            track_is_dark,
+            scan_hint_center,
+            scan_hint_width,
+        )
+        if res is not None and res["conf"] >= conf_min_dyn:
+            roi_results.append(res)
+        elif THREE_BAND_MODE:
+            roi_results = detect_three_band_lanes(
+                raw,
+                black_th,
+                img_w,
+                img_h,
+                img_cx,
+                row_cm_per_px,
+                row_distance_cm,
+                track_is_dark,
+                scan_hint_center,
+                scan_hint_width,
+            )
+            roi_results = [r for r in roi_results if r["conf"] >= conf_min_dyn]
+    elif THREE_BAND_MODE:
         roi_results = detect_three_band_lanes(
             raw,
             black_th,
@@ -1044,10 +1138,10 @@ while robot.step(timestep) != -1:
             row_cm_per_px,
             row_distance_cm,
             track_is_dark,
-            state["last_lane_center_x"],
-            state["last_lane_width_px"],
+            scan_hint_center,
+            scan_hint_width,
         )
-        roi_results = [r for r in roi_results if r["conf"] >= CONF_MIN]
+        roi_results = [r for r in roi_results if r["conf"] >= conf_min_dyn]
     elif SIMPLE_BOTTOM_MODE:
         res = bottom_quarter_midline(
             raw,
@@ -1058,10 +1152,10 @@ while robot.step(timestep) != -1:
             row_cm_per_px,
             row_distance_cm,
             track_is_dark,
-            state["last_lane_center_x"],
-            state["last_lane_width_px"],
+            scan_hint_center,
+            scan_hint_width,
         )
-        if res is not None and res["conf"] >= CONF_MIN:
+        if res is not None and res["conf"] >= conf_min_dyn:
             roi_results.append(res)
     else:
         for roi in rois:
@@ -1075,10 +1169,10 @@ while robot.step(timestep) != -1:
                 row_cm_per_px,
                 row_distance_cm,
                 track_is_dark,
-                state["last_lane_center_x"],
-                state["last_lane_width_px"],
+                scan_hint_center,
+                scan_hint_width,
             )
-            if res is not None and res["conf"] >= CONF_MIN:
+            if res is not None and res["conf"] >= conf_min_dyn:
                 roi_results.append(res)
 
     steer = 0.0
@@ -1120,7 +1214,7 @@ while robot.step(timestep) != -1:
         score_total = 0.0
         for r in roi_results:
             score_total += r["weight"] * r["conf"] * result_quality_weight(r)
-        if score_total <= MIN_WEIGHT:
+        if score_total <= min_weight_dyn:
             roi_results = []
 
     if roi_results:
@@ -1228,7 +1322,12 @@ while robot.step(timestep) != -1:
         if state["lost_frames"] <= LOST_HOLD_FRAMES:
             steer = state["last_steer"] * 0.85
         else:
-            steer = abs(LOST_SEARCH_TURN) if LOST_PREFER_LEFT else -abs(LOST_SEARCH_TURN)
+            if startup_active and STARTUP_LOST_BIAS_FREE:
+                # Startup only: unbiased alternating search avoids one-side runaway.
+                phase = (state["lost_frames"] // 8) % 2
+                steer = abs(LOST_SEARCH_TURN) if phase == 0 else -abs(LOST_SEARCH_TURN)
+            else:
+                steer = abs(LOST_SEARCH_TURN) if LOST_PREFER_LEFT else -abs(LOST_SEARCH_TURN)
 
     steer_norm = abs(steer) / max(STEER_SAT, 1e-6)
     speed_scale = 1.0 - SPEED_STEER_SLOWDOWN * steer_norm
@@ -1252,7 +1351,7 @@ while robot.step(timestep) != -1:
     now = robot.getTime()
     if now - state["last_print"] > 0.25:
         state["last_print"] = now
-        print(
+        _emit_log(
             "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f bp=%.2f sym=%.1f lock=%d cq=%.2f"
             % (
                 black_th,
