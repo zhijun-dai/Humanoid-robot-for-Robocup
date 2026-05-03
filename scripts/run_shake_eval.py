@@ -82,17 +82,22 @@ def run_one(label: str, world: str, log_path: str, run_seconds: int, env_extra: 
 		env=env,
 	)
 	timed_out = False
-	# Allow generous extra time so controller has time to finalize and webots to exit.
-	hard_limit = run_seconds + 70
+	# Webots --batch may keep running after the controller returns unless Supervisor calls simulationQuit.
+	# Keep margin above run_seconds for startup + teardown (OpenCV remap init, etc.).
+	hard_limit = max(run_seconds + 35, int(run_seconds * 2.5 + 30))
 	try:
 		output, _ = proc.communicate(timeout=hard_limit)
 	except subprocess.TimeoutExpired:
 		timed_out = True
-		proc.kill()
 		try:
-			output, _ = proc.communicate(timeout=5)
+			proc.terminate()
+			output, _ = proc.communicate(timeout=8)
 		except subprocess.TimeoutExpired:
-			output = ""
+			proc.kill()
+			try:
+				output, _ = proc.communicate(timeout=5)
+			except subprocess.TimeoutExpired:
+				output = ""
 	elapsed = time.time() - t0
 	with open(log_path, "w", encoding="utf-8") as f:
 		f.write(output or "")

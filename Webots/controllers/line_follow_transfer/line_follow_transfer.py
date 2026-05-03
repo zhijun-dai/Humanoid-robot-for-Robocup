@@ -1524,6 +1524,11 @@ except Exception:
 while robot.step(timestep) != -1:
     if _MAX_RUN_SECONDS > 0.0 and robot.getTime() >= _MAX_RUN_SECONDS:
         _emit_log("line_follow_transfer: reached LINE_FOLLOW_MAX_SECONDS=%.1f, exiting" % _MAX_RUN_SECONDS)
+        if _IS_SUPERVISOR:
+            try:
+                robot.simulationQuit(0)
+            except Exception:
+                pass
         break
     state["startup_frames"] += 1
     apply_camera_shake(robot.getTime(), state["startup_frames"], CAM_POSE_NODE,
