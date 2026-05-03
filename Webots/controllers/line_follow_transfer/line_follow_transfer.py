@@ -97,6 +97,10 @@ def _close_optional_runtime_log():
 atexit.register(_close_optional_runtime_log)
 
 
+def _format_sf(x):
+    return "%.9g" % float(x)
+
+
 def _emit_log(msg):
     print(msg)
     if _RUNTIME_LOG_FH is None:
@@ -106,6 +110,91 @@ def _emit_log(msg):
         _RUNTIME_LOG_FH.flush()
     except Exception:
         pass
+
+
+def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
+    """Align Webots Camera lens (Brown) and optional horizontal FOV with camera.calibration.
+
+    OpenCV dist_coeffs = [k1,k2,p1,p2,k3]; Webots Lens has no k3 term (high-order radial omitted).
+    Webots Camera.fieldOfView is the *horizontal* FOV (rad); we set it from fx and image width.
+    """
+    cal = _cfg_get(cfg, "camera.calibration", None)
+    if not isinstance(cal, dict) or not cal.get("webots_apply_lens", True):
+        return
+    dc = cal.get("dist_coeffs")
+    if not isinstance(dc, list) or len(dc) < 4:
+        _emit_log("WARN: camera.calibration.dist_coeffs needs 4+ values for Webots Lens; skip lens")
+        return
+
+    k1, k2, p1, p2 = (float(dc[0]), float(dc[1]), float(dc[2]), float(dc[3]))
+    radial_sign = float(cal.get("webots_lens_radial_sign", 1.0))
+    tang_sign = float(cal.get("webots_lens_tangential_sign", 1.0))
+    k1 *= radial_sign
+    k2 *= radial_sign
+    p1 *= tang_sign
+    p2 *= tang_sign
+
+    cx = float(cal.get("cx", 0.0))
+    cy = float(cal.get("cy", 0.0))
+    isize = cal.get("image_size")
+    if not isinstance(isize, dict):
+        isize = {}
+    cw = float(isize.get("width", 0.0) or 0.0)
+    ch = float(isize.get("height", 0.0) or 0.0)
+
+    img_w = float(camera.getWidth())
+    img_h = float(camera.getHeight())
+    if cw <= 0.0:
+        cw = img_w
+    if ch <= 0.0:
+        ch = img_h
+    scale_x = img_w / cw if cw > 0.0 else 1.0
+    scale_y = img_h / ch if ch > 0.0 else 1.0
+    cx_n = (cx * scale_x) / max(img_w, 1.0)
+    cy_n = (cy * scale_y) / max(img_h, 1.0)
+
+    lens_str = "Lens { center %s %s radialCoefficients [ %s %s ] tangentialCoefficients [ %s %s ] }" % (
+        _format_sf(cx_n),
+        _format_sf(cy_n),
+        _format_sf(k1),
+        _format_sf(k2),
+        _format_sf(p1),
+        _format_sf(p2),
+    )
+
+    if not _IS_SUPERVISOR:
+        _emit_log("WARN: Webots lens/FOV from calibration needs Supervisor; skipped")
+        return
+
+    try:
+        cam_node = robot.getFromDevice(camera)
+    except Exception as exc:
+        _emit_log("WARN: getFromDevice(camera) failed: %s" % exc)
+        return
+    if cam_node is None:
+        _emit_log("WARN: getFromDevice(camera) returned None")
+        return
+
+    try:
+        cam_node.getField("lens").importSFNodeFromString(lens_str)
+        _emit_log("INFO: Webots Camera lens set from calibration (k3 dropped if present)")
+    except Exception as exc:
+        _emit_log("WARN: failed to set Camera lens: %s" % exc)
+
+    if not cal.get("webots_sync_fov_from_fx", True):
+        return
+    fx = float(cal.get("fx", 0.0))
+    if fx <= 0.0:
+        return
+    fov_h = 2.0 * math.atan(img_w / (2.0 * fx))
+    if fov_h <= 0.0 or fov_h >= math.pi:
+        return
+    try:
+        cam_node.getField("fieldOfView").setSFFloat(fov_h)
+        _emit_log("INFO: Webots Camera fieldOfView=%.6f rad (from fx,width)" % fov_h)
+    except Exception as exc:
+        _emit_log("WARN: failed to set fieldOfView: %s" % exc)
+
 
 # Core parameters migrated from CVpart/main/main1.py
 CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
@@ -1183,6 +1272,7 @@ except Exception:
 if camera is None:
     raise RuntimeError("No camera device found: %s" % CAMERA_DEVICE_NAME)
 
+_try_apply_webots_camera_lens_and_fov(robot, camera, SHARED_CFG)
 camera.enable(timestep)
 
 left_motor = robot.getDevice("left wheel motor")
