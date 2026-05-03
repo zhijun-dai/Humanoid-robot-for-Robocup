@@ -187,10 +187,23 @@
       "ack_timeout_ms": 80,
       "retry_max": 3,
       "safety_timeout_ms": 300,
+      "lost_recovery_ms": 800,
       "step_latch_mode": "latest_1_or_recent_3",
       "ctrl_profile": "v2_p1_discrete_first",
       "continuous_ctrl_enable": false,
-      "continuous_ctrl_required": false
+      "continuous_ctrl_required": false,
+      "conf_quant_step": 5,
+      "ex_quant_step_mm": 10,
+      "ang_quant_step_cdeg": 100,
+      "mode_idle": 0,
+      "mode_line_follow": 1,
+      "mode_lost_search": 2,
+      "transport": "file",
+      "file_path": "generated/uart_dump.bin",
+      "udp": {
+        "host": "127.0.0.1",
+        "port": 56565
+      }
     },
     "route": {
       "go": "1",

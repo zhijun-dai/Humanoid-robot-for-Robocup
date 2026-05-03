@@ -3,6 +3,35 @@ import math
 import os
 import json
 import atexit
+import sys
+
+# Allow importing the local protocol module when Webots launches us with a
+# different cwd than the controller folder.
+_CTRL_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CTRL_DIR not in sys.path:
+    sys.path.insert(0, _CTRL_DIR)
+
+try:
+    from protocol_v2 import VisionProtocolV2, SafetyMonitor, quantize_to_step  # type: ignore
+except Exception:
+    VisionProtocolV2 = None
+    SafetyMonitor = None
+
+    def quantize_to_step(v, step):
+        if step <= 1:
+            return int(v)
+        return int(round(float(v) / float(step)) * float(step))
+
+try:
+    from uart_sink import build_sink_from_config  # type: ignore
+except Exception:
+    def build_sink_from_config(*_args, **_kwargs):
+        class _Null:
+            def write(self, _data):
+                return
+            def close(self):
+                return
+        return _Null()
 
 
 def _cfg_get(cfg, path, default):
@@ -212,6 +241,33 @@ RIGHT_TURN_SCALE = float(_cfg_get(SHARED_CFG, "webots.right_turn_scale", 0.65))
 LEFT_CURVE_OUTWARD_GAIN = float(_cfg_get(SHARED_CFG, "webots.left_curve_outward_gain", 0.35))
 LEFT_CURVE_OUTWARD_PX = float(_cfg_get(SHARED_CFG, "webots.left_curve_outward_px", 6.0))
 CAMERA_DEVICE_NAME = str(_cfg_get(SHARED_CFG, "webots.camera.device_name", "camera_ext"))
+
+# Steering deadband used when mapping continuous steer to discrete route_u8.
+STEER_DEADBAND = float(_cfg_get(SHARED_CFG, "steer.deadband", 6.0))
+
+# Protocol v2 emit configuration (mirrors what OpenMV main1.py would send).
+PROTOCOL_VERSION = int(_cfg_get(SHARED_CFG, "output.protocol.version", 2))
+CTRL_HZ = int(_cfg_get(SHARED_CFG, "output.protocol.ctrl_hz", 10))
+HEARTBEAT_HZ = int(_cfg_get(SHARED_CFG, "output.protocol.heartbeat_hz", 10))
+CTRL_INTERVAL_MS = int(1000.0 / max(1, CTRL_HZ))
+HEARTBEAT_INTERVAL_MS = int(1000.0 / max(1, HEARTBEAT_HZ))
+ACK_TIMEOUT_MS = int(_cfg_get(SHARED_CFG, "output.protocol.ack_timeout_ms", 80))
+RETRY_MAX = int(_cfg_get(SHARED_CFG, "output.protocol.retry_max", 3))
+SAFETY_TIMEOUT_MS = int(_cfg_get(SHARED_CFG, "output.protocol.safety_timeout_ms", 300))
+LOST_RECOVERY_MS = int(_cfg_get(SHARED_CFG, "output.protocol.lost_recovery_ms", 800))
+CONF_QUANT_STEP = int(_cfg_get(SHARED_CFG, "output.protocol.conf_quant_step", 5))
+EX_QUANT_STEP_MM = int(_cfg_get(SHARED_CFG, "output.protocol.ex_quant_step_mm", 10))
+ANG_QUANT_STEP_CDEG = int(_cfg_get(SHARED_CFG, "output.protocol.ang_quant_step_cdeg", 100))
+MODE_IDLE = int(_cfg_get(SHARED_CFG, "output.protocol.mode_idle", 0))
+MODE_LINE_FOLLOW = int(_cfg_get(SHARED_CFG, "output.protocol.mode_line_follow", 1))
+MODE_LOST_SEARCH = int(_cfg_get(SHARED_CFG, "output.protocol.mode_lost_search", 2))
+PROTO_TRANSPORT = str(_cfg_get(SHARED_CFG, "output.protocol.transport", "file")).strip().lower()
+PROTO_FILE_PATH = str(_cfg_get(SHARED_CFG, "output.protocol.file_path", "generated/uart_dump.bin"))
+PROTO_UDP_HOST = str(_cfg_get(SHARED_CFG, "output.protocol.udp.host", "127.0.0.1"))
+PROTO_UDP_PORT = int(_cfg_get(SHARED_CFG, "output.protocol.udp.port", 56565))
+# Override transport via env var so auto_tune scripts can flip it without editing JSON.
+PROTO_TRANSPORT = os.environ.get("LINE_FOLLOW_PROTO_TRANSPORT", PROTO_TRANSPORT).strip().lower()
+PROTO_FILE_PATH = os.environ.get("LINE_FOLLOW_PROTO_FILE", PROTO_FILE_PATH)
 
 
 def clamp(v, lo, hi):
@@ -1059,7 +1115,74 @@ state = {
     "last_band_mask": 0,
     "startup_frames": 0,
     "last_bottom_lock_valid": False,
+    "last_ctrl_ms": -1000,
+    "last_hb_ms": -1000,
 }
+
+
+def steer_to_route(steer_value, deadband):
+    """Mirror CVpart/main/main1.py:steer_to_cmd mapping (string -> u8).
+
+    Mapping: |steer|<=deadband -> 1 (go), steer>0 -> 3 (right),
+             steer<-18 -> 2 (left), else -> 4 (slight_left).
+    """
+    if abs(steer_value) <= deadband:
+        return 1
+    if steer_value > 0:
+        return 3
+    if steer_value < -18.0:
+        return 2
+    return 4
+
+
+PROTOCOL = None
+SAFETY = None
+PROTO_SINK = None
+if VisionProtocolV2 is not None:
+    try:
+        PROTOCOL = VisionProtocolV2(version=PROTOCOL_VERSION)
+    except Exception:
+        PROTOCOL = None
+if SafetyMonitor is not None:
+    try:
+        SAFETY = SafetyMonitor(
+            ctrl_period_ms=CTRL_INTERVAL_MS,
+            heartbeat_period_ms=HEARTBEAT_INTERVAL_MS,
+            safe_stop_ms=SAFETY_TIMEOUT_MS,
+            lost_recovery_ms=LOST_RECOVERY_MS,
+        )
+    except Exception:
+        SAFETY = None
+
+# Resolve protocol file path: relative paths resolve against the repository
+# root (one folder above Webots/), not the current working directory.
+if not os.path.isabs(PROTO_FILE_PATH):
+    repo_root = os.path.abspath(os.path.join(_CTRL_DIR, "..", "..", ".."))
+    PROTO_FILE_PATH_ABS = os.path.join(repo_root, PROTO_FILE_PATH)
+else:
+    PROTO_FILE_PATH_ABS = PROTO_FILE_PATH
+
+try:
+    PROTO_SINK = build_sink_from_config(
+        PROTO_TRANSPORT,
+        file_path=PROTO_FILE_PATH_ABS,
+        udp_host=PROTO_UDP_HOST,
+        udp_port=PROTO_UDP_PORT,
+    )
+except Exception:
+    PROTO_SINK = None
+
+
+def _close_proto_sink():
+    if PROTO_SINK is None:
+        return
+    try:
+        PROTO_SINK.close()
+    except Exception:
+        pass
+
+
+atexit.register(_close_proto_sink)
 
 max_speed = MAX_SPEED
 if _RUNTIME_LOG_PATH:
@@ -1347,6 +1470,46 @@ while robot.step(timestep) != -1:
 
     left_motor.setVelocity(left_speed)
     right_motor.setVelocity(right_speed)
+
+    # ---- Protocol v2 emit (mirror what OpenMV main1.py would write to UART) ----
+    if PROTOCOL is not None and PROTO_SINK is not None:
+        ts_ms_now = int(robot.getTime() * 1000) & 0xFFFFFFFF
+        mode_u8 = MODE_LOST_SEARCH if state["lost_frames"] > 0 else MODE_LINE_FOLLOW
+        conf_u8 = int(clamp(round(avg_conf * 100.0), 0, 100))
+        conf_u8 = int(clamp(quantize_to_step(conf_u8, CONF_QUANT_STEP), 0, 100))
+        lost_u8 = 1 if state["lost_frames"] > 0 else 0
+        ex_mm = int(quantize_to_step(int(round(base_err_cm * 10.0)), EX_QUANT_STEP_MM))
+        ang_cdeg = int(quantize_to_step(int(round(angle_err * 100.0)), ANG_QUANT_STEP_CDEG))
+        route_u8 = steer_to_route(steer, STEER_DEADBAND)
+
+        if (ts_ms_now - state["last_hb_ms"]) >= HEARTBEAT_INTERVAL_MS:
+            try:
+                PROTO_SINK.write(PROTOCOL.build_heartbeat(mode_u8, ts_ms=ts_ms_now))
+                state["last_hb_ms"] = ts_ms_now
+                if SAFETY is not None:
+                    SAFETY.mark_sent_hb(ts_ms_now)
+            except Exception:
+                pass
+
+        if (ts_ms_now - state["last_ctrl_ms"]) >= CTRL_INTERVAL_MS:
+            try:
+                frame = PROTOCOL.build_line_ctrl(
+                    mode_u8=mode_u8,
+                    conf_u8=conf_u8,
+                    lost_u8=lost_u8,
+                    route_u8=route_u8,
+                    ex_mm_i16=ex_mm,
+                    ang_cdeg_i16=ang_cdeg,
+                    v_cmd_mmps_i16=0,
+                    w_cmd_mradps_i16=0,
+                    ts_ms=ts_ms_now,
+                )
+                PROTO_SINK.write(frame)
+                state["last_ctrl_ms"] = ts_ms_now
+                if SAFETY is not None:
+                    SAFETY.mark_sent_ctrl(ts_ms_now)
+            except Exception:
+                pass
 
     now = robot.getTime()
     if now - state["last_print"] > 0.25:
