@@ -39,6 +39,16 @@ except Exception:
                 return
         return _Null()
 
+try:
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+
+    _HAS_CV2 = True
+except Exception:
+    cv2 = None  # type: ignore
+    np = None  # type: ignore
+    _HAS_CV2 = False
+
 
 def _cfg_get(cfg, path, default):
     cur = cfg
@@ -112,71 +122,145 @@ def _emit_log(msg):
         pass
 
 
-def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
-    """Align Webots Camera lens (Brown) and optional horizontal FOV with camera.calibration.
+SIM_OPENCV_DISTORT_RUNTIME = False
+_OPENCV_DISTORT_STATE = None  # (w, h, map_x, map_y) or None
 
-    OpenCV dist_coeffs = [k1,k2,p1,p2,k3]; Webots Lens has no k3 term (high-order radial omitted).
-    Webots Camera.fieldOfView is the *horizontal* FOV (rad); we set it from fx and image width.
 
-    Black band / ellipse at borders: Webots warps an already-rendered rectangle; strong radial
-    distortion maps edge pixels to coordinates outside that buffer, which become black (see
-    cyberbotics/webots discussions on lens border artifacts). Mitigations in JSON:
-    ``webots_fov_overscan`` > 1 widens pre-warp rendering; ``webots_distortion_scale`` < 1
-    weakens k1,k2,p1,p2 in sim only (real calibration unchanged).
-    """
-    cal = _cfg_get(cfg, "camera.calibration", None)
-    if not isinstance(cal, dict) or not cal.get("webots_apply_lens", True):
-        return
-    dc = cal.get("dist_coeffs")
-    if not isinstance(dc, list) or len(dc) < 4:
-        _emit_log("WARN: camera.calibration.dist_coeffs needs 4+ values for Webots Lens; skip lens")
-        return
-
-    k1, k2, p1, p2 = (float(dc[0]), float(dc[1]), float(dc[2]), float(dc[3]))
-    radial_sign = float(cal.get("webots_lens_radial_sign", 1.0))
-    tang_sign = float(cal.get("webots_lens_tangential_sign", 1.0))
-    k1 *= radial_sign
-    k2 *= radial_sign
-    p1 *= tang_sign
-    p2 *= tang_sign
-    d_scale = float(cal.get("webots_distortion_scale", 1.0))
-    if d_scale <= 0.0:
-        d_scale = 1.0
-    k1 *= d_scale
-    k2 *= d_scale
-    p1 *= d_scale
-    p2 *= d_scale
-
+def _build_opencv_distort_remap(w, h, cal):
+    """Distorted output pixel -> source sample in pinhole Webots image (OpenCV Brown model)."""
+    fx = float(cal.get("fx", 0.0))
+    fy = float(cal.get("fy", 0.0))
     cx = float(cal.get("cx", 0.0))
     cy = float(cal.get("cy", 0.0))
-    isize = cal.get("image_size")
-    if not isinstance(isize, dict):
-        isize = {}
-    cw = float(isize.get("width", 0.0) or 0.0)
-    ch = float(isize.get("height", 0.0) or 0.0)
+    if fx <= 0.0 or fy <= 0.0:
+        return None, None
+    dc = cal.get("dist_coeffs")
+    if not isinstance(dc, list) or len(dc) < 4:
+        return None, None
+    d_list = [float(dc[i]) for i in range(min(5, len(dc)))]
+    while len(d_list) < 5:
+        d_list.append(0.0)
+    K = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]], dtype=np.float64)
+    D = np.array(d_list, dtype=np.float64).reshape(-1, 1)
+    ys, xs = np.indices((h, w))
+    pts = np.stack([xs.astype(np.float32), ys.astype(np.float32)], axis=-1).reshape(-1, 1, 2)
+    undist_norm = cv2.undistortPoints(pts, K, D, P=None)
+    xn = undist_norm[:, 0, 0]
+    yn = undist_norm[:, 0, 1]
+    map_x = (xn * fx + cx).reshape(h, w).astype(np.float32)
+    map_y = (yn * fy + cy).reshape(h, w).astype(np.float32)
+    return map_x, map_y
 
-    img_w = float(camera.getWidth())
-    img_h = float(camera.getHeight())
-    if cw <= 0.0:
-        cw = img_w
-    if ch <= 0.0:
-        ch = img_h
-    scale_x = img_w / cw if cw > 0.0 else 1.0
-    scale_y = img_h / ch if ch > 0.0 else 1.0
-    cx_n = (cx * scale_x) / max(img_w, 1.0)
-    cy_n = (cy * scale_y) / max(img_h, 1.0)
 
-    lens_str = "Lens { center %s %s radialCoefficients [ %s %s ] tangentialCoefficients [ %s %s ] }" % (
-        _format_sf(cx_n),
-        _format_sf(cy_n),
-        _format_sf(k1),
-        _format_sf(k2),
-        _format_sf(p1),
-        _format_sf(p2),
+def opencv_distort_bgra_from_pinhole(raw_bytes, w, h, cal):
+    """Apply OpenCV distortion (incl. k3) to a pinhole BGRA buffer. Uses BORDER_REPLICATE."""
+    global _OPENCV_DISTORT_STATE
+    if not _HAS_CV2 or not isinstance(cal, dict) or raw_bytes is None:
+        return raw_bytes
+    if _OPENCV_DISTORT_STATE is None or _OPENCV_DISTORT_STATE[0] != w or _OPENCV_DISTORT_STATE[1] != h:
+        mx, my = _build_opencv_distort_remap(w, h, cal)
+        if mx is None:
+            return raw_bytes
+        _OPENCV_DISTORT_STATE = (w, h, mx, my)
+    _, _, mx, my = _OPENCV_DISTORT_STATE
+    exp = w * h * 4
+    buf = memoryview(raw_bytes)
+    if buf.nbytes < exp:
+        return raw_bytes
+    arr = np.asarray(buf[:exp]).view(dtype=np.uint8).reshape((h, w, 4))
+    bgr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+    out = cv2.remap(
+        bgr,
+        mx,
+        my,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
     )
+    bgra = cv2.cvtColor(out, cv2.COLOR_BGR2BGRA)
+    return bgra.tobytes()
+
+
+def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
+    """Webots Lens (no k3) and/or OpenCV post-distort to match calib; horizontal FOV from fx."""
+    global SIM_OPENCV_DISTORT_RUNTIME
+    SIM_OPENCV_DISTORT_RUNTIME = False
+
+    cal = _cfg_get(cfg, "camera.calibration", None)
+    if not isinstance(cal, dict):
+        return
+
+    use_sim_cv = bool(cal.get("sim_opencv_distort", False))
+    if use_sim_cv and not _HAS_CV2:
+        _emit_log(
+            "WARN: sim_opencv_distort=True but cv2/numpy missing; "
+            "install opencv in Webots Python or use Webots Lens only"
+        )
+        use_sim_cv = False
+
+    if use_sim_cv:
+        dc_chk = cal.get("dist_coeffs")
+        if not isinstance(dc_chk, list) or len(dc_chk) < 4:
+            _emit_log("WARN: sim_opencv_distort needs dist_coeffs (4+); disabled")
+            use_sim_cv = False
+
+    webots_lens = bool(cal.get("webots_apply_lens", True))
+    if not use_sim_cv and not webots_lens:
+        return
+
+    dc = cal.get("dist_coeffs")
+    if not use_sim_cv:
+        if not isinstance(dc, list) or len(dc) < 4:
+            _emit_log("WARN: camera.calibration.dist_coeffs needs 4+ values for Webots Lens; skip lens")
+            return
+
+    img_w_f = float(camera.getWidth())
+    img_h_f = float(camera.getHeight())
+
+    if use_sim_cv:
+        lens_str = "Lens { center 0.5 0.5 radialCoefficients [ 0 0 ] tangentialCoefficients [ 0 0 ] }"
+    else:
+        k1, k2, p1, p2 = (float(dc[0]), float(dc[1]), float(dc[2]), float(dc[3]))
+        radial_sign = float(cal.get("webots_lens_radial_sign", 1.0))
+        tang_sign = float(cal.get("webots_lens_tangential_sign", 1.0))
+        k1 *= radial_sign
+        k2 *= radial_sign
+        p1 *= tang_sign
+        p2 *= tang_sign
+        d_scale = float(cal.get("webots_distortion_scale", 1.0))
+        if d_scale <= 0.0:
+            d_scale = 1.0
+        k1 *= d_scale
+        k2 *= d_scale
+        p1 *= d_scale
+        p2 *= d_scale
+
+        cx = float(cal.get("cx", 0.0))
+        cy = float(cal.get("cy", 0.0))
+        isize = cal.get("image_size")
+        if not isinstance(isize, dict):
+            isize = {}
+        cw = float(isize.get("width", 0.0) or 0.0)
+        ch = float(isize.get("height", 0.0) or 0.0)
+        if cw <= 0.0:
+            cw = img_w_f
+        if ch <= 0.0:
+            ch = img_h_f
+        scale_x = img_w_f / cw if cw > 0.0 else 1.0
+        scale_y = img_h_f / ch if ch > 0.0 else 1.0
+        cx_n = (cx * scale_x) / max(img_w_f, 1.0)
+        cy_n = (cy * scale_y) / max(img_h_f, 1.0)
+
+        lens_str = "Lens { center %s %s radialCoefficients [ %s %s ] tangentialCoefficients [ %s %s ] }" % (
+            _format_sf(cx_n),
+            _format_sf(cy_n),
+            _format_sf(k1),
+            _format_sf(k2),
+            _format_sf(p1),
+            _format_sf(p2),
+        )
 
     if not _IS_SUPERVISOR:
-        _emit_log("WARN: Webots lens/FOV from calibration needs Supervisor; skipped")
+        _emit_log("WARN: camera calibration lens/FOV needs Supervisor getFromDevice; skipped")
         return
 
     try:
@@ -190,9 +274,14 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
 
     try:
         cam_node.getField("lens").importSFNodeFromString(lens_str)
-        _emit_log(
-            "INFO: Webots Camera lens from calibration (k3 omitted; dist_scale=%.3g)" % d_scale
-        )
+        if use_sim_cv:
+            SIM_OPENCV_DISTORT_RUNTIME = True
+            _emit_log("INFO: sim_opencv_distort on (Webots Lens cleared; OpenCV model after grab)")
+        else:
+            _emit_log(
+                "INFO: Webots Camera lens from calibration (k3 omitted; dist_scale=%.3g)"
+                % float(cal.get("webots_distortion_scale", 1.0))
+            )
     except Exception as exc:
         _emit_log("WARN: failed to set Camera lens: %s" % exc)
 
@@ -201,7 +290,7 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
     fx = float(cal.get("fx", 0.0))
     if fx <= 0.0:
         return
-    fov_h = 2.0 * math.atan(img_w / (2.0 * fx))
+    fov_h = 2.0 * math.atan(img_w_f / (2.0 * fx))
     ov = float(cal.get("webots_fov_overscan", 1.0))
     if ov > 0.0:
         fov_h *= ov
@@ -1440,6 +1529,10 @@ while robot.step(timestep) != -1:
     raw = camera.getImage()
     if raw is None:
         continue
+    if SIM_OPENCV_DISTORT_RUNTIME:
+        cal_d = _cfg_get(SHARED_CFG, "camera.calibration", None)
+        if isinstance(cal_d, dict):
+            raw = opencv_distort_bgra_from_pinhole(raw, img_w, img_h, cal_d)
 
     black_th = clamp(otsu_threshold(raw, img_w, img_h) + TH_OFFSET, TH_MIN, TH_MAX)
     track_dark_candidate = detect_track_is_dark(raw, img_w, img_h, black_th)
