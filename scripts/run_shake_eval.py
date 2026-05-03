@@ -81,7 +81,7 @@ def run_one(label: str, world: str, log_path: str, run_seconds: int, env_extra: 
 	)
 	timed_out = False
 	# Allow generous extra time so controller has time to finalize and webots to exit.
-	hard_limit = run_seconds + 30
+	hard_limit = run_seconds + 180
 	try:
 		output, _ = proc.communicate(timeout=hard_limit)
 	except subprocess.TimeoutExpired:

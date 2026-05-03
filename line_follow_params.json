@@ -144,7 +144,7 @@
     "enable_debug_draw": true
   },
   "fusion": {
-    "smooth_alpha": 0.72,
+    "smooth_alpha": 0.74,
     "curve_gain": 0.096,
     "angle_gain": 0.168,
     "min_weight": 0.1,
@@ -153,7 +153,7 @@
   "pid": {
     "curve_switch_cm": 7.707,
     "straight": {
-      "kp": 0.84,
+      "kp": 0.83,
       "ki": 0.004,
       "kd": 0.095
     },
@@ -248,8 +248,8 @@
     "diff_rms_trigger_cm": 1.5,
     "alpha_high": 0.96,
     "bottom_lock_blend_scale": 2.2,
-    "kd_shake_scale": 0.38,
-    "steer_rate_limit_per_frame": 5.5,
+    "kd_shake_scale": 0.37,
+    "steer_rate_limit_per_frame": 5.25,
     "decay_frames": 14
   },
   "openmv_webots_aligned": {
