@@ -10,7 +10,7 @@ Trials:
 The script edits line_follow_params.json in place between trials and always
 restores the original content on exit (success or failure).
 
-Quick iteration: default --run-seconds is 12. For steadier stats use e.g. 25.
+Quick iteration: default --run-seconds is 18. For quicker smoke use 12; for steadier stats use 25.
 """
 
 from __future__ import annotations
@@ -181,8 +181,8 @@ def main() -> int:
 	ap.add_argument("--world", default="Webots/worlds/Robocup.wbt")
 	ap.add_argument("--params", default="line_follow_params.json")
 	ap.add_argument("--out-dir", default="generated/shake_eval")
-	ap.add_argument("--run-seconds", type=int, default=12,
-	                help="Controller run per trial (LINE_FOLLOW_MAX_SECONDS). Default 12 quick; 25+ steadier stats.")
+	ap.add_argument("--run-seconds", type=int, default=18,
+	                help="Controller run per trial (LINE_FOLLOW_MAX_SECONDS). Default 18; 12 quick smoke; 25+ steadier.")
 	ap.add_argument("--label-prefix", default="")
 	args = ap.parse_args()
 
