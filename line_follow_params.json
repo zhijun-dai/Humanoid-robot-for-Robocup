@@ -30,9 +30,7 @@
         2.173290511270469
       ],
       "rms_reprojection_error": 0.5903406158899142,
-      "mean_reprojection_error": 0.07978872085831515,
-      "webots_fov_overscan": 1.1,
-      "webots_distortion_scale": 0.85
+      "mean_reprojection_error": 0.07978872085831515
     }
   },
   "turn": {
