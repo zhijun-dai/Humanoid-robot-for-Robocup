@@ -224,17 +224,17 @@
     "seed": 17,
     "camera_pose_def": "CAM_POSE",
     "yaw": {
-      "freq_hz": 1.6,
+      "freq_hz": 1.05,
       "amp_deg": 6.0,
       "phase_jit_rad": 0.4
     },
     "pitch": {
-      "freq_hz": 7.0,
+      "freq_hz": 4.8,
       "amp_deg": 2.5,
       "noise_amp_deg": 1.0
     },
     "roll": {
-      "freq_hz": 0.7,
+      "freq_hz": 0.48,
       "amp_deg": 3.0
     },
     "xy": {
