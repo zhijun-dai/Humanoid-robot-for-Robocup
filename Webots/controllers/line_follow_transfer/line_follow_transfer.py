@@ -1,8 +1,14 @@
-from controller import Robot
+try:
+    from controller import Supervisor as Robot  # Supervisor is a Robot subclass
+    _IS_SUPERVISOR = True
+except Exception:
+    from controller import Robot
+    _IS_SUPERVISOR = False
 import math
 import os
 import json
 import atexit
+import random
 import sys
 
 # Allow importing the local protocol module when Webots launches us with a
@@ -269,6 +275,44 @@ PROTO_UDP_PORT = int(_cfg_get(SHARED_CFG, "output.protocol.udp.port", 56565))
 PROTO_TRANSPORT = os.environ.get("LINE_FOLLOW_PROTO_TRANSPORT", PROTO_TRANSPORT).strip().lower()
 PROTO_FILE_PATH = os.environ.get("LINE_FOLLOW_PROTO_FILE", PROTO_FILE_PATH)
 
+# Camera shake injection (simulates the head-bobbing of a real biped).
+SHAKE_CFG = _cfg_get(SHARED_CFG, "shake", {}) or {}
+SHAKE_ENABLE = bool(SHAKE_CFG.get("enable", False))
+# Allow scripts/CI to flip shake on/off without editing JSON.
+_env_shake = os.environ.get("LINE_FOLLOW_SHAKE", "")
+if _env_shake.strip().lower() in ("1", "true", "on", "yes"):
+    SHAKE_ENABLE = True
+elif _env_shake.strip().lower() in ("0", "false", "off", "no"):
+    SHAKE_ENABLE = False
+SHAKE_WARMUP_FRAMES = int(SHAKE_CFG.get("warmup_frames", 30))
+SHAKE_SEED = int(SHAKE_CFG.get("seed", 17))
+SHAKE_DEF = str(SHAKE_CFG.get("camera_pose_def", "CAM_POSE"))
+_shake_yaw = SHAKE_CFG.get("yaw", {}) or {}
+_shake_pitch = SHAKE_CFG.get("pitch", {}) or {}
+_shake_roll = SHAKE_CFG.get("roll", {}) or {}
+_shake_xy = SHAKE_CFG.get("xy", {}) or {}
+SHAKE_YAW_FREQ = float(_shake_yaw.get("freq_hz", 1.6))
+SHAKE_YAW_AMP_RAD = math.radians(float(_shake_yaw.get("amp_deg", 6.0)))
+SHAKE_YAW_PHASE_JIT = float(_shake_yaw.get("phase_jit_rad", 0.4))
+SHAKE_PITCH_FREQ = float(_shake_pitch.get("freq_hz", 7.0))
+SHAKE_PITCH_AMP_RAD = math.radians(float(_shake_pitch.get("amp_deg", 2.5)))
+SHAKE_PITCH_NOISE_RAD = math.radians(float(_shake_pitch.get("noise_amp_deg", 1.0)))
+SHAKE_ROLL_FREQ = float(_shake_roll.get("freq_hz", 0.7))
+SHAKE_ROLL_AMP_RAD = math.radians(float(_shake_roll.get("amp_deg", 3.0)))
+SHAKE_XY_NOISE_M = float(_shake_xy.get("noise_cm", 1.5)) / 100.0
+
+# Anti-shake robustness layer (active even with shake.enable=False, but the
+# triggers will rarely fire in the calm baseline).
+ROBUST_CFG = _cfg_get(SHARED_CFG, "shake_robust", {}) or {}
+ROBUST_ENABLE = bool(ROBUST_CFG.get("enable", True))
+ROBUST_DIFF_WINDOW = int(ROBUST_CFG.get("diff_window", 5))
+ROBUST_DIFF_RMS_TRIGGER_PX = float(ROBUST_CFG.get("diff_rms_trigger_px", 6.0))
+ROBUST_ALPHA_HIGH = float(ROBUST_CFG.get("alpha_high", 0.88))
+ROBUST_BOTTOM_LOCK_BLEND_SCALE = float(ROBUST_CFG.get("bottom_lock_blend_scale", 1.5))
+ROBUST_KD_SHAKE_SCALE = float(ROBUST_CFG.get("kd_shake_scale", 0.6))
+ROBUST_STEER_RATE_LIMIT = float(ROBUST_CFG.get("steer_rate_limit_per_frame", 14.0))
+ROBUST_DECAY_FRAMES = int(ROBUST_CFG.get("decay_frames", 8))
+
 
 def clamp(v, lo, hi):
     if v < lo:
@@ -276,6 +320,61 @@ def clamp(v, lo, hi):
     if v > hi:
         return hi
     return v
+
+
+def euler_zyx_to_axis_angle(yaw_rad, pitch_rad, roll_rad):
+    """Convert intrinsic ZYX euler angles to Webots SFRotation (axis_x, axis_y, axis_z, angle).
+
+    yaw  -> rotation about Z (left/right head turn)
+    pitch -> rotation about Y (front/back nod)
+    roll -> rotation about X (side tilt)
+    """
+    cy = math.cos(yaw_rad * 0.5)
+    sy = math.sin(yaw_rad * 0.5)
+    cp = math.cos(pitch_rad * 0.5)
+    sp = math.sin(pitch_rad * 0.5)
+    cr = math.cos(roll_rad * 0.5)
+    sr = math.sin(roll_rad * 0.5)
+    qw = cy * cp * cr + sy * sp * sr
+    qx = cy * cp * sr - sy * sp * cr
+    qy = sy * cp * sr + cy * sp * cr
+    qz = sy * cp * cr - cy * sp * sr
+    qw_clamped = max(-1.0, min(1.0, qw))
+    angle = 2.0 * math.acos(qw_clamped)
+    s = math.sqrt(max(1e-12, 1.0 - qw_clamped * qw_clamped))
+    if s < 1e-9:
+        return (0.0, 0.0, 1.0, 0.0)
+    return (qx / s, qy / s, qz / s, angle)
+
+
+def apply_camera_shake(t_sec, frame_idx, pose_node, base_trs, rng):
+    """Inject biped-style head shake on the camera Pose. Safe no-op when disabled."""
+    if (not SHAKE_ENABLE) or (pose_node is None) or (frame_idx < SHAKE_WARMUP_FRAMES):
+        return
+    yaw = SHAKE_YAW_AMP_RAD * math.sin(
+        2.0 * math.pi * SHAKE_YAW_FREQ * t_sec + SHAKE_YAW_PHASE_JIT * (rng.random() - 0.5)
+    )
+    pitch = (
+        SHAKE_PITCH_AMP_RAD * math.sin(2.0 * math.pi * SHAKE_PITCH_FREQ * t_sec)
+        + SHAKE_PITCH_NOISE_RAD * (rng.random() - 0.5) * 2.0
+    )
+    roll = SHAKE_ROLL_AMP_RAD * math.sin(2.0 * math.pi * SHAKE_ROLL_FREQ * t_sec)
+    ax, ay, az, ang = euler_zyx_to_axis_angle(yaw, pitch, roll)
+    try:
+        rot_field = pose_node.getField("rotation")
+        if rot_field is not None:
+            rot_field.setSFRotation([ax, ay, az, ang])
+    except Exception:
+        pass
+    if SHAKE_XY_NOISE_M > 0.0:
+        try:
+            trs_field = pose_node.getField("translation")
+            if trs_field is not None:
+                nx = (rng.random() - 0.5) * 2.0 * SHAKE_XY_NOISE_M
+                ny = (rng.random() - 0.5) * 2.0 * SHAKE_XY_NOISE_M
+                trs_field.setSFVec3f([base_trs[0] + nx, base_trs[1] + ny, base_trs[2]])
+        except Exception:
+            pass
 
 
 def median(vals):
@@ -1057,12 +1156,13 @@ def nonlinear_map(v):
     return STEER_SAT * math.tanh(v / STEER_SCALE)
 
 
-def pid_step(err, dt, state, curve_mode=False):
+def pid_step(err, dt, state, curve_mode=False, kd_scale=1.0):
     if not curve_mode:
         kp, ki, kd = KP_STRAIGHT, KI_STRAIGHT, KD_STRAIGHT
     else:
         kp, ki, kd = KP_CURVE, KI_CURVE, KD_CURVE
 
+    kd = kd * float(kd_scale)
     state["integral"] += err * dt
     state["integral"] = clamp(state["integral"], -I_CLAMP, I_CLAMP)
 
@@ -1092,6 +1192,27 @@ right_motor.setPosition(float("inf"))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
+# Resolve camera Pose for shake injection (Supervisor only).
+CAM_POSE_NODE = None
+CAM_POSE_BASE_TRS = (0.0, 0.0, 0.38)
+if _IS_SUPERVISOR:
+    try:
+        CAM_POSE_NODE = robot.getFromDef(SHAKE_DEF)
+    except Exception:
+        CAM_POSE_NODE = None
+    if CAM_POSE_NODE is not None:
+        try:
+            trs_field = CAM_POSE_NODE.getField("translation")
+            if trs_field is not None:
+                base_v = trs_field.getSFVec3f()
+                CAM_POSE_BASE_TRS = (float(base_v[0]), float(base_v[1]), float(base_v[2]))
+        except Exception:
+            pass
+SHAKE_RNG = random.Random(SHAKE_SEED)
+if SHAKE_ENABLE and CAM_POSE_NODE is None:
+    _emit_log("WARN: shake.enable=True but CAM_POSE node not found; shake disabled at runtime")
+    SHAKE_ENABLE = False
+
 img_w = camera.getWidth()
 img_h = camera.getHeight()
 img_cx = img_w // 2
@@ -1117,6 +1238,9 @@ state = {
     "last_bottom_lock_valid": False,
     "last_ctrl_ms": -1000,
     "last_hb_ms": -1000,
+    "near_err_history": [],
+    "shake_active_frames": 0,
+    "diff_rms_px": 0.0,
 }
 
 
@@ -1190,8 +1314,19 @@ if _RUNTIME_LOG_PATH:
 else:
     _emit_log("line_follow_transfer: camera=%dx%d, timestep=%dms" % (img_w, img_h, timestep))
 
+_MAX_RUN_SECONDS = 0.0
+try:
+    _MAX_RUN_SECONDS = float(os.environ.get("LINE_FOLLOW_MAX_SECONDS", "0") or "0")
+except Exception:
+    _MAX_RUN_SECONDS = 0.0
+
 while robot.step(timestep) != -1:
+    if _MAX_RUN_SECONDS > 0.0 and robot.getTime() >= _MAX_RUN_SECONDS:
+        _emit_log("line_follow_transfer: reached LINE_FOLLOW_MAX_SECONDS=%.1f, exiting" % _MAX_RUN_SECONDS)
+        break
     state["startup_frames"] += 1
+    apply_camera_shake(robot.getTime(), state["startup_frames"], CAM_POSE_NODE,
+                       CAM_POSE_BASE_TRS, SHAKE_RNG)
     raw = camera.getImage()
     if raw is None:
         continue
@@ -1368,8 +1503,16 @@ while robot.step(timestep) != -1:
             near_err_cm = 0.68 * near_err_cm + 0.32 * state["last_base_err"]
             near_err_px = 0.68 * near_err_px + 0.32 * (state["last_lane_center_x"] - img_cx)
 
+        # Anti-shake: use prior-frame shake state so we apply consistent gains
+        # within the current frame without recursion.
+        shake_active = ROBUST_ENABLE and (state["shake_active_frames"] > 0)
+        alpha_eff = ROBUST_ALPHA_HIGH if shake_active else SMOOTH_ALPHA
+        lock_blend_scale = ROBUST_BOTTOM_LOCK_BLEND_SCALE if shake_active else 1.0
+        kd_scale_eff = ROBUST_KD_SHAKE_SCALE if shake_active else 1.0
+
         if bottom_pair_ratio > 0.0:
-            lock_gain = BOTTOM_LOCK_BLEND * (0.55 + 0.45 * center_lock_quality)
+            lock_gain = (BOTTOM_LOCK_BLEND * lock_blend_scale) * (0.55 + 0.45 * center_lock_quality)
+            lock_gain = clamp(lock_gain, 0.0, 0.95)
             near_err_px = (1.0 - lock_gain) * near_err_px + lock_gain * bottom_sym_err_px
             near_err_cm = near_err_px * row_cm_per_px[img_h - 1]
 
@@ -1421,13 +1564,27 @@ while robot.step(timestep) != -1:
             # Left curves tend to cut to inner side at high speed; add a small outward correction.
             fused_err += LEFT_CURVE_OUTWARD_GAIN * curve_norm
 
-        state["smoothed_err"] = SMOOTH_ALPHA * state["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
+        state["smoothed_err"] = alpha_eff * state["smoothed_err"] + (1.0 - alpha_eff) * fused_err
         dt = timestep / 1000.0
-        pid_out = pid_step(state["smoothed_err"], dt, state, curve_mode_force)
+        pid_out = pid_step(state["smoothed_err"], dt, state, curve_mode_force, kd_scale=kd_scale_eff)
         steer = nonlinear_map(pid_out)
         if steer < 0.0:
             steer *= RIGHT_TURN_SCALE
-        state["last_steer"] = steer
+        # last_steer is updated after the rate-limit stage below.
+
+        # Anti-shake: update detector with the post-lock near pixel error.
+        hist = state["near_err_history"]
+        hist.append(float(near_err_px))
+        if len(hist) > ROBUST_DIFF_WINDOW + 1:
+            del hist[0]
+        if len(hist) >= 3:
+            diffs = [hist[i] - hist[i - 1] for i in range(1, len(hist))]
+            rms = math.sqrt(sum(d * d for d in diffs) / len(diffs))
+            state["diff_rms_px"] = rms
+            if rms >= ROBUST_DIFF_RMS_TRIGGER_PX:
+                state["shake_active_frames"] = ROBUST_DECAY_FRAMES
+            elif state["shake_active_frames"] > 0:
+                state["shake_active_frames"] -= 1
 
         state["last_base_err"] = base_err_cm
         state["last_angle_err"] = angle_err
@@ -1463,6 +1620,14 @@ while robot.step(timestep) != -1:
         warmup = state["startup_frames"] / float(STARTUP_SETTLE_FRAMES)
         speed_scale *= (STARTUP_SPEED_SCALE + (1.0 - STARTUP_SPEED_SCALE) * warmup)
     target_base_speed = clamp(BASE_SPEED * speed_scale, SPEED_MIN, BASE_SPEED)
+
+    # Anti-shake: limit the per-frame steer change to avoid amplifying noise.
+    if ROBUST_ENABLE and ROBUST_STEER_RATE_LIMIT > 0.0:
+        prev_steer = float(state["last_steer"])
+        d_steer = steer - prev_steer
+        if abs(d_steer) > ROBUST_STEER_RATE_LIMIT:
+            steer = prev_steer + math.copysign(ROBUST_STEER_RATE_LIMIT, d_steer)
+    state["last_steer"] = steer
 
     delta = clamp(steer * STEER_TO_WHEEL, -2.8, 2.8)
     left_speed = clamp(target_base_speed - delta, -max_speed, max_speed)
@@ -1515,7 +1680,7 @@ while robot.step(timestep) != -1:
     if now - state["last_print"] > 0.25:
         state["last_print"] = now
         _emit_log(
-            "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f bp=%.2f sym=%.1f lock=%d cq=%.2f"
+            "th=%d steer=%.2f ex=%.3fcm ang=%.2fdeg z=%.2fcm tg=%.3f mode=%d conf=%.3f lost=%d L=%.3f R=%.3f expx=%.2f bmask=%d red=%.2f blk=%.2f bp=%.2f sym=%.1f lock=%d cq=%.2f drms=%.2f sk=%d"
             % (
                 black_th,
                 steer,
@@ -1536,5 +1701,7 @@ while robot.step(timestep) != -1:
                 bottom_sym_err_px,
                 1 if bottom_lock_valid else 0,
                 center_lock_quality,
+                state["diff_rms_px"],
+                state["shake_active_frames"],
             )
         )
