@@ -249,7 +249,7 @@
     "alpha_high": 0.96,
     "bottom_lock_blend_scale": 2.2,
     "kd_shake_scale": 0.37,
-    "steer_rate_limit_per_frame": 5.25,
+    "steer_rate_limit_per_frame": 5.0,
     "decay_frames": 14
   },
   "openmv_webots_aligned": {
