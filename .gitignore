@@ -58,3 +58,9 @@ EventRecorderStub.scvd
 .idea/
 Thumbs.db
 .DS_Store
+
+# =========================
+# Local eval / UART dumps
+# =========================
+generated/
+Webots/controllers/line_follow_transfer/generated/
