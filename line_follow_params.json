@@ -217,7 +217,7 @@
     "in_lane_min_conf": 0.2
   },
   "shake": {
-    "enable": false,
+    "enable": true,
     "warmup_frames": 30,
     "seed": 17,
     "camera_pose_def": "CAM_POSE",
