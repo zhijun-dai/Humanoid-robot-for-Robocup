@@ -250,6 +250,11 @@
     "steer_rate_limit_per_frame": 6.0,
     "decay_frames": 12
   },
+  "openmv_webots_aligned": {
+    "band_rows_factor": 0.78,
+    "use_histeq": false,
+    "red_detect_on_grayscale": false
+  },
   "webots": {
     "base_speed": 6.28,
     "steer_to_wheel": 0.0184,
