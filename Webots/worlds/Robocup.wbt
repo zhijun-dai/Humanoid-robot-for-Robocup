@@ -62,8 +62,9 @@ E-puck {
   translation 0.30 -0.78 0.02
   rotation 0 0 1 0
   controller "line_follow_transfer"
+  supervisor TRUE
   turretSlot [
-    Pose {
+    DEF CAM_POSE Pose {
       translation 0 0 0.38
       children [
         Camera {
