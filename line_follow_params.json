@@ -30,7 +30,9 @@
         2.173290511270469
       ],
       "rms_reprojection_error": 0.5903406158899142,
-      "mean_reprojection_error": 0.07978872085831515
+      "mean_reprojection_error": 0.07978872085831515,
+      "webots_fov_overscan": 1.1,
+      "webots_distortion_scale": 0.85
     }
   },
   "turn": {
@@ -142,7 +144,7 @@
     "enable_debug_draw": true
   },
   "fusion": {
-    "smooth_alpha": 0.65,
+    "smooth_alpha": 0.72,
     "curve_gain": 0.096,
     "angle_gain": 0.168,
     "min_weight": 0.1,
@@ -151,14 +153,14 @@
   "pid": {
     "curve_switch_cm": 7.707,
     "straight": {
-      "kp": 0.9,
+      "kp": 0.84,
       "ki": 0.004,
-      "kd": 0.08
+      "kd": 0.095
     },
     "curve": {
-      "kp": 1.05,
+      "kp": 0.98,
       "ki": 0.002,
-      "kd": 0.1
+      "kd": 0.115
     },
     "i_clamp": 60.0
   },
@@ -244,11 +246,11 @@
     "diff_window": 5,
     "diff_rms_trigger_px": 4.0,
     "diff_rms_trigger_cm": 1.5,
-    "alpha_high": 0.93,
+    "alpha_high": 0.96,
     "bottom_lock_blend_scale": 2.2,
-    "kd_shake_scale": 0.45,
-    "steer_rate_limit_per_frame": 6.0,
-    "decay_frames": 12
+    "kd_shake_scale": 0.38,
+    "steer_rate_limit_per_frame": 5.5,
+    "decay_frames": 14
   },
   "openmv_webots_aligned": {
     "band_rows_factor": 0.78,

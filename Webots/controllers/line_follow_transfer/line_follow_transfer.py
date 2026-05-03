@@ -117,6 +117,12 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
 
     OpenCV dist_coeffs = [k1,k2,p1,p2,k3]; Webots Lens has no k3 term (high-order radial omitted).
     Webots Camera.fieldOfView is the *horizontal* FOV (rad); we set it from fx and image width.
+
+    Black band / ellipse at borders: Webots warps an already-rendered rectangle; strong radial
+    distortion maps edge pixels to coordinates outside that buffer, which become black (see
+    cyberbotics/webots discussions on lens border artifacts). Mitigations in JSON:
+    ``webots_fov_overscan`` > 1 widens pre-warp rendering; ``webots_distortion_scale`` < 1
+    weakens k1,k2,p1,p2 in sim only (real calibration unchanged).
     """
     cal = _cfg_get(cfg, "camera.calibration", None)
     if not isinstance(cal, dict) or not cal.get("webots_apply_lens", True):
@@ -133,6 +139,13 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
     k2 *= radial_sign
     p1 *= tang_sign
     p2 *= tang_sign
+    d_scale = float(cal.get("webots_distortion_scale", 1.0))
+    if d_scale <= 0.0:
+        d_scale = 1.0
+    k1 *= d_scale
+    k2 *= d_scale
+    p1 *= d_scale
+    p2 *= d_scale
 
     cx = float(cal.get("cx", 0.0))
     cy = float(cal.get("cy", 0.0))
@@ -177,7 +190,9 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
 
     try:
         cam_node.getField("lens").importSFNodeFromString(lens_str)
-        _emit_log("INFO: Webots Camera lens set from calibration (k3 dropped if present)")
+        _emit_log(
+            "INFO: Webots Camera lens from calibration (k3 omitted; dist_scale=%.3g)" % d_scale
+        )
     except Exception as exc:
         _emit_log("WARN: failed to set Camera lens: %s" % exc)
 
@@ -187,11 +202,16 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
     if fx <= 0.0:
         return
     fov_h = 2.0 * math.atan(img_w / (2.0 * fx))
+    ov = float(cal.get("webots_fov_overscan", 1.0))
+    if ov > 0.0:
+        fov_h *= ov
     if fov_h <= 0.0 or fov_h >= math.pi:
         return
     try:
         cam_node.getField("fieldOfView").setSFFloat(fov_h)
-        _emit_log("INFO: Webots Camera fieldOfView=%.6f rad (from fx,width)" % fov_h)
+        _emit_log(
+            "INFO: Webots Camera fieldOfView=%.6f rad (fx,width; overscan=%.3g)" % (fov_h, ov)
+        )
     except Exception as exc:
         _emit_log("WARN: failed to set fieldOfView: %s" % exc)
 

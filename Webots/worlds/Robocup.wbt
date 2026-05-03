@@ -71,11 +71,11 @@ E-puck {
           name "camera_ext"
           width 320
           height 240
-          fieldOfView 0.9793406158899142
+          fieldOfView 1.0772747874094675
           lens Lens {
             center 0.5112371320736188 0.4292757458267272
-            radialCoefficients -0.3443658519844782 -0.7107972991589404
-            tangentialCoefficients 0.0020093310480857134 0.003366728173328394
+            radialCoefficients -0.29271097428680644 -0.6041777044850994
+            tangentialCoefficients 0.0017079312907728563 0.002861718947329135
           }
           rotation 0 1 0 0.7853981633974483
           near 0.01
