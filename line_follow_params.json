@@ -31,7 +31,8 @@
       ],
       "rms_reprojection_error": 0.5903406158899142,
       "mean_reprojection_error": 0.07978872085831515,
-      "sim_opencv_distort": false
+      "sim_opencv_distort": true,
+      "webots_apply_lens": false
     }
   },
   "turn": {

@@ -189,13 +189,15 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
     if not isinstance(cal, dict):
         return
 
-    use_sim_cv = bool(cal.get("sim_opencv_distort", False))
-    if use_sim_cv and not _HAS_CV2:
-        _emit_log(
-            "WARN: sim_opencv_distort=True but cv2/numpy missing; "
-            "install opencv in Webots Python or use Webots Lens only"
+    sim_cv_requested = bool(cal.get("sim_opencv_distort", False))
+    use_sim_cv = sim_cv_requested
+    if sim_cv_requested and not _HAS_CV2:
+        raise RuntimeError(
+            "sim_opencv_distort=True 需要 Webots 自带的 Python 能 import cv2、numpy（否则不能用无黑边的标定畸变）。"
+            " 安装示例：在 Webots 安装目录下运行 "
+            "`python.exe -m pip install opencv-python-headless numpy`"
+            "（可将 sim_opencv_distort 设为 false 以暂时退回 Webots Lens，但会出现边缘黑区）。"
         )
-        use_sim_cv = False
 
     if use_sim_cv:
         dc_chk = cal.get("dist_coeffs")

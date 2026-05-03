@@ -72,11 +72,6 @@ E-puck {
           width 320
           height 240
           fieldOfView 0.9793406158899142
-          lens Lens {
-            center 0.5112371320736188 0.4292757458267272
-            radialCoefficients -0.3443658519844782 -0.7107972991589404
-            tangentialCoefficients 0.0020093310480857134 0.003366728173328394
-          }
           rotation 0 1 0 0.7853981633974483
           near 0.01
         }
