@@ -1,7 +1,8 @@
 # qr_uart_test.py — 仅测二维码识别 + UART1/115200
 # 串口与 uart_link_test.py 一致。接线：P1(TX)→主控 RX，P0(RX)←主控 TX，GND 共地。
 #
-# 仅白名单 "1"~"6"；UART(P1) 只发单字节 ASCII '1'..'6'，5 s 内至多发 1 次；不读串口、不发其它字节。
+# 仅白名单 "1"~"6"；UART(P1) 每帧发 1 字节 uint8_t：取值 1~6（线路上 0x01~0x06，不是 ASCII 的 0x31~0x36）。
+# 5 s 内至多发 1 次；不读串口。IDE 终端 print 与所发字节数值一致。
 
 import sensor
 import time
@@ -40,7 +41,9 @@ def now_ms():
 def send_qr_action(payload):
 	if payload not in QR_ACTION_MAP:
 		return False
-	uart.write(payload)
+	u = QR_ACTION_MAP[payload]
+	uart.write(bytes([u]))
+	print(u)
 	return True
 
 
