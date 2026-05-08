@@ -1,10 +1,9 @@
 # qr_uart_test.py — 仅测二维码识别 + UART1/115200
 # 串口与 uart_link_test.py 一致。接线：P1(TX)→主控 RX，P0(RX)←主控 TX，GND 共地。
 #
-# 仅白名单 "1"~"6"；UART 只发单字节 ASCII：'1'..'6'（不做 0xAA 帧）。
+# 仅白名单 "1"~"6"；UART(P1) 只发单字节 ASCII '1'..'6'，5 s 内至多发 1 次；不读串口、不发其它字节。
 
 import sensor
-import image
 import time
 from pyb import UART, LED
 
@@ -24,21 +23,12 @@ QR_ACTION_MAP = {
 	"6": 6,
 }
 
-QR_ACTION_NAME = {
-	"1": "举左手",
-	"2": "举右手",
-	"3": "抬左腿",
-	"4": "抬右腿",
-	"5": "举双手",
-	"6": "左右摇头",
-}
-
 QR_STABLE_FRAMES = 2
-QR_SEND_COOLDOWN_MS = 2500
+QR_SEND_COOLDOWN_MS = 5000
 LENS_CORR_STRENGTH = 1.5
 SENSOR_SKIP_MS = 2000
 
-last_qr_sent_ms = 0
+last_qr_sent_ms = None
 qr_candidate = None
 qr_candidate_count = 0
 
@@ -51,7 +41,6 @@ def send_qr_action(payload):
 	if payload not in QR_ACTION_MAP:
 		return False
 	uart.write(payload)
-	print("[TX QR] {}".format(QR_ACTION_NAME.get(payload, payload)))
 	return True
 
 
@@ -69,8 +58,6 @@ def draw_qr_debug(img, qrs):
 		img.draw_string(rect[0], max(0, rect[1] - 12), payload, color=box_color, scale=1)
 		if payload in QR_ACTION_MAP and first_ok is None:
 			first_ok = payload
-		elif payload not in QR_ACTION_MAP:
-			print("[QR 非白名单] payload={!r}".format(payload))
 	return first_ok
 
 
@@ -100,10 +87,10 @@ while True:
 		else:
 			qr_candidate = qr_payload
 			qr_candidate_count = 1
-			print("{}".format(qr_payload))
 
 		if qr_candidate_count >= QR_STABLE_FRAMES:
-			if time.ticks_diff(now, last_qr_sent_ms) > QR_SEND_COOLDOWN_MS:
+			ready = last_qr_sent_ms is None or time.ticks_diff(now, last_qr_sent_ms) >= QR_SEND_COOLDOWN_MS
+			if ready:
 				if send_qr_action(qr_payload):
 					last_qr_sent_ms = now
 					qr_candidate_count = 0
@@ -111,13 +98,5 @@ while True:
 	else:
 		qr_candidate = None
 		qr_candidate_count = 0
-
-	if uart.any():
-		try:
-			raw = uart.read()
-			if raw:
-				print("rx:", raw)
-		except Exception as e:
-			print("read err:", e)
 
 #	print("fps={:.1f}".format(clock.fps()))
