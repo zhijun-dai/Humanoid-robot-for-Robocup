@@ -13,11 +13,13 @@ JPEG_QUALITY = 95
 # 'button_or_serial': keep running and capture on board button/serial Enter
 TRIGGER_MODE = "run_once"
 # Set one fixed save path here.
+# 默认用 /flash 便于和你电脑上出现的 U 盘(E:)对照；脚本写入后 Windows 常不自动刷新目录，
+# 请在资源管理器对 E: 按 F5，或拔插 USB，或用 OpenMV IDE 的设备文件列表查看。
 # Examples:
-#   "calib_photos_manual"            -> save under current filesystem root/workdir
-#   "/flash/calib_photos_manual"     -> force internal flash
-#   "/sd/calib_photos_manual"        -> force SD card
-SAVE_DIR = "calib_photos_manual"
+#   "/flash/calib_photos_manual"     -> 板载闪存（推荐）
+#   "/sd/calib_photos_manual"        -> SD 卡
+#   "calib_photos_manual"            -> 相对路径（由 resolve_save_dir 尝试 flash/sd）
+SAVE_DIR = "/flash/calib_photos_manual"
 DEBOUNCE_MS = 250
 WARMUP_MS = 2000
 # ------------------------------------------------------
@@ -94,6 +96,25 @@ def next_image_index(save_dir):
         idx += 1
 
 
+def sync_fs():
+    try:
+        os.sync()
+    except (AttributeError, OSError):
+        pass
+
+
+def after_save(filename, save_dir):
+    """刷盘并让串口打印板内目录情况，避免误以为没存上。"""
+    sync_fs()
+    print("saved:", filename)
+    try:
+        names = os.listdir(save_dir)
+        print("board listdir({}): {} file(s)".format(save_dir, len(names)))
+    except Exception as e:
+        print("listdir err:", e)
+    print("PC 若 E: 看不到: F5 或拔插 USB；" + "IDE 里「设备/相机文件」列表更可靠。")
+
+
 def read_switch(sw):
     if sw is None:
         return False
@@ -136,7 +157,7 @@ if TRIGGER_MODE == "run_once":
     filename = "%s/img_%03d.jpg" % (save_dir, idx)
     img = sensor.snapshot()
     img.save(filename, quality=JPEG_QUALITY)
-    print("saved:", filename)
+    after_save(filename, save_dir)
     print("Done. Move target and click Run again for next photo.")
     led_g.on()
     time.sleep_ms(120)
@@ -172,7 +193,7 @@ if TRIGGER_MODE != "run_once":
             filename = "%s/img_%03d.jpg" % (save_dir, idx)
             img = sensor.snapshot()
             img.save(filename, quality=JPEG_QUALITY)
-            print("saved:", filename)
+            after_save(filename, save_dir)
 
             led_g.on()
             time.sleep_ms(80)
