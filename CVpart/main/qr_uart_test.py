@@ -1,10 +1,7 @@
-# qr_uart_test.py — 仅测二维码识别 + UART1/115200 发动作码
-# 逻辑来自 main_test0.py（find_qrcodes、防抖、帧协议）；串口与 uart_link_test.py 一致。
-# 接线：P1(TX)→主控 RX，P0(RX)←主控 TX，GND 共地。
+# qr_uart_test.py — 仅测二维码识别 + UART1/115200
+# 串口与 uart_link_test.py 一致。接线：P1(TX)→主控 RX，P0(RX)←主控 TX，GND 共地。
 #
-# 白名单 payload 为 "1"~"6"；发送：
-#   - 旧协议：原始 ASCII 字符一个字节（如 b"3"）
-#   - 帧协议：0xAA, cmd, checksum（与 main_test0 相同）
+# 仅白名单 "1"~"6"；UART 只发单字节 ASCII：'1'..'6'（不做 0xAA 帧）。
 
 import sensor
 import image
@@ -18,17 +15,13 @@ try:
 except TypeError:
 	uart = UART(UART_ID, BAUD)
 
-USE_LEGACY_CHAR_PROTOCOL = True
-USE_FRAME_PROTOCOL = True
-FRAME_HEAD = 0xAA
-
 QR_ACTION_MAP = {
-	"1": 0x01,
-	"2": 0x02,
-	"3": 0x03,
-	"4": 0x04,
-	"5": 0x05,
-	"6": 0x06,
+	"1": 1,
+	"2": 2,
+	"3": 3,
+	"4": 4,
+	"5": 5,
+	"6": 6,
 }
 
 QR_ACTION_NAME = {
@@ -54,24 +47,11 @@ def now_ms():
 	return time.ticks_ms()
 
 
-def send_frame(cmd):
-	checksum = (FRAME_HEAD + cmd) & 0xFF
-	uart.write(bytearray([FRAME_HEAD, cmd, checksum]))
-
-
 def send_qr_action(payload):
-	cmd = QR_ACTION_MAP.get(payload)
-	if cmd is None:
+	if payload not in QR_ACTION_MAP:
 		return False
-	if USE_LEGACY_CHAR_PROTOCOL:
-		uart.write(payload)
-	if USE_FRAME_PROTOCOL:
-		send_frame(cmd)
-	print("[TX QR] payload={} {} cmd=0x{:02X}".format(
-		payload,
-		QR_ACTION_NAME.get(payload, ""),
-		cmd,
-	))
+	uart.write(payload)
+	print("[TX QR] {}".format(QR_ACTION_NAME.get(payload, payload)))
 	return True
 
 
@@ -103,8 +83,8 @@ sensor.set_framesize(sensor.QVGA)
 sensor.skip_frames(time=SENSOR_SKIP_MS)
 
 clock = time.clock()
-print("qr_uart_test: UART{} @ {}".format(UART_ID, BAUD))
-print("白名单 1~6；稳定 {} 帧 + 冷却 {} ms 后发送".format(QR_STABLE_FRAMES, QR_SEND_COOLDOWN_MS))
+#print("qr_uart_test: UART{} @ {}".format(UART_ID, BAUD))
+#print("白名单 1~6；稳定 {} 帧 + 冷却 {} ms 后发送".format(QR_STABLE_FRAMES, QR_SEND_COOLDOWN_MS))
 
 while True:
 	clock.tick()
@@ -120,7 +100,7 @@ while True:
 		else:
 			qr_candidate = qr_payload
 			qr_candidate_count = 1
-			print("[候选] {} {}".format(qr_payload, QR_ACTION_NAME.get(qr_payload, "")))
+			print("{}".format(qr_payload))
 
 		if qr_candidate_count >= QR_STABLE_FRAMES:
 			if time.ticks_diff(now, last_qr_sent_ms) > QR_SEND_COOLDOWN_MS:
@@ -140,4 +120,4 @@ while True:
 		except Exception as e:
 			print("read err:", e)
 
-	print("fps={:.1f}".format(clock.fps()))
+#	print("fps={:.1f}".format(clock.fps()))
