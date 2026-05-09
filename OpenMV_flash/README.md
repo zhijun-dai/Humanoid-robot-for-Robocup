@@ -8,7 +8,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| `main.py` | 上电自动运行；内容由 `main_webots_aligned` 巡线流水线对齐 Webots |
+| `main.py` | 上电自动运行：巡线 + 协议 V2 + **赛事二维码 1~6**（`MSG_QR_EVENT`，参数见 `openmv_webots_aligned`） |
 | `protocol_v2.py` | 与主控通讯 V2 |
 | `line_follow_params.json` | **真机用**（`sim_opencv_distort: false` 等）；与仓库根目录 `line_follow_params.json`（仿真）对照同步时，只合并你需要上场的字段，勿把仿真专用开关原样刷下去 |
 
@@ -22,6 +22,9 @@
 - **仿真用参数**：仓库根目录 `line_follow_params.json`（含 `sim_opencv_distort: true` 等）。  
   更新相机标定、ROI、PID 等后，建议：**先改根目录并通过 Webots**，再把需上场的键同步到本目录 `line_follow_params.json`。
 
-## 二维码测试
+## 二维码（已集成在 `main.py`）
 
-本目录 **默认 `main.py` 不包含二维码**。仅测 QR+串口请用 `CVpart/main/qr_uart_test.py`（或自行把 QR 逻辑并入本目录 `main.py`）。路线图见仓库根目录 `task_plan.md`。
+- 规则数字 **1～6**；有 **`VisionProtocolV2`** 时发 **`build_qr_event`**（带 ACK 时可重发）；无协议时回退为单字节 **0x01～0x06**。
+- 调参键（均在 **`line_follow_params.json` → `openmv_webots_aligned`**）：  
+  `qr_enable`、`qr_every_n_frames`、`qr_lens_corr_strength`、`qr_stable_frames`、`qr_send_cooldown_ms`、`qr_request_ack`、`qr_only_when_tracking`、`qr_min_line_conf`。
+- **专项单测**（仅 UART、无巡线）：仍可使用 `CVpart/main/qr_uart_test.py`。

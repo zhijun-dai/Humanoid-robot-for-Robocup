@@ -1,6 +1,7 @@
 # main_webots_aligned.py（OpenMV_flash 刷机副本 — 上场前在此目录改，或从 CVpart/main/main_webots_aligned.py 同步）
 # 与 Webots/controllers/line_follow_transfer/line_follow_transfer.py 对齐：
 # 三路带扫描、简单底区、底部锁、像素域融合、PID、shake_robust、协议输出。
+# 集成赛事二维码 1~6：copy + lens_corr + 防抖/冷却，发 MSG_QR_EVENT（参数见 line_follow_params.openmv_webots_aligned）。
 # main1.py 保留为轻量三 ROI 方案；本脚本用于「与仿真同款流水线」对照 / 真机验证。
 #
 # 说明：OpenMV 默认灰度图时无法做红色识别，红块禁行视为关闭（仅保留跨线黑块启发）。
@@ -78,6 +79,17 @@ OMV_WA = _cfg_get(SHARED_CFG, "openmv_webots_aligned", {}) or {}
 BAND_ROWS_FACTOR = float(OMV_WA.get("band_rows_factor", 0.78))
 USE_HISTEQ = bool(OMV_WA.get("use_histeq", False))
 RED_ON_GRAY = bool(OMV_WA.get("red_detect_on_grayscale", False))
+
+# 赛事二维码（规则：数字 1~6；5cm 码）。与巡线并行：降采样帧上 lens_corr + 多帧确认 + 冷却 + 可选 MSG_QR_EVENT。
+QR_ENABLE = bool(OMV_WA.get("qr_enable", True))
+QR_EVERY_N_FRAMES = max(1, int(OMV_WA.get("qr_every_n_frames", 3)))
+QR_LENS_CORR = float(OMV_WA.get("qr_lens_corr_strength", 1.35))
+QR_STABLE_FRAMES = max(1, int(OMV_WA.get("qr_stable_frames", 3)))
+QR_COOLDOWN_MS = max(400, int(OMV_WA.get("qr_send_cooldown_ms", 3200)))
+QR_REQUEST_ACK = bool(OMV_WA.get("qr_request_ack", True))
+QR_ONLY_WHEN_TRACKING = bool(OMV_WA.get("qr_only_when_tracking", True))
+QR_MIN_CONF = float(OMV_WA.get("qr_min_line_conf", 0.22))
+QR_ACTION_MAP = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6}
 
 
 def _scale_i(n, factor):
@@ -1044,6 +1056,11 @@ state = {
 }
 last_frame_ms = now_ms()
 
+_qr_tick = 0
+_qr_cand = None
+_qr_cand_n = 0
+_last_qr_ms = None
+
 while True:
 	clock.tick()
 	state["startup_frames"] += 1
@@ -1278,6 +1295,50 @@ while True:
 	ang_cdeg = int(quantize_to_step(int(round(angle_err * 100.0)), ANG_STEP_CDEG))
 
 	n = now_ms()
+
+	if QR_ENABLE:
+		_qr_tick += 1
+		track_ok = (state["lost_frames"] == 0) if QR_ONLY_WHEN_TRACKING else True
+		conf_ok = avg_conf >= QR_MIN_CONF
+		if track_ok and conf_ok and (_qr_tick % QR_EVERY_N_FRAMES == 0):
+			try:
+				qimg = img.copy()
+				if QR_LENS_CORR > 0.01:
+					qimg = qimg.lens_corr(QR_LENS_CORR)
+				qrs = qimg.find_qrcodes()
+				qr_pl = None
+				if qrs:
+					for qr in qrs:
+						pl = qr.payload().strip()
+						if pl in QR_ACTION_MAP:
+							qr_pl = pl
+							break
+				if qr_pl is not None:
+					if qr_pl == _qr_cand:
+						_qr_cand_n += 1
+					else:
+						_qr_cand = qr_pl
+						_qr_cand_n = 1
+					if _qr_cand_n >= QR_STABLE_FRAMES:
+						if _last_qr_ms is None or time.ticks_diff(n, _last_qr_ms) >= QR_COOLDOWN_MS:
+							u = QR_ACTION_MAP[qr_pl]
+							if protocol is not None:
+								fr = protocol.build_qr_event(u, request_ack=QR_REQUEST_ACK)
+								if pending_acks is not None and QR_REQUEST_ACK:
+									pending_acks.send(fr, fr[5], fr[3])
+								else:
+									_uart_send(fr)
+							else:
+								_uart_send(bytes([u]))
+							_last_qr_ms = n
+							_qr_cand_n = 0
+							LED(2).toggle()
+				else:
+					_qr_cand = None
+					_qr_cand_n = 0
+			except Exception:
+				pass
+
 	if protocol is not None:
 		if time.ticks_diff(n, last_heartbeat_ms) >= HEARTBEAT_INTERVAL_MS:
 			try:

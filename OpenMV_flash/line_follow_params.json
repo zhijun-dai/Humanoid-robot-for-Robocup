@@ -255,7 +255,15 @@
   "openmv_webots_aligned": {
     "band_rows_factor": 0.78,
     "use_histeq": false,
-    "red_detect_on_grayscale": false
+    "red_detect_on_grayscale": false,
+    "qr_enable": true,
+    "qr_every_n_frames": 3,
+    "qr_lens_corr_strength": 1.35,
+    "qr_stable_frames": 3,
+    "qr_send_cooldown_ms": 3200,
+    "qr_request_ack": true,
+    "qr_only_when_tracking": true,
+    "qr_min_line_conf": 0.22
   },
   "webots": {
     "base_speed": 6.28,
