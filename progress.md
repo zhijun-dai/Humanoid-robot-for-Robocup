@@ -7,7 +7,12 @@
 - 建立 `task_plan.md`（含 QR 指标与阶段 B–D）；`findings.md` 待用。
 - **Webots**：自动化环境未找到 `webots.exe`，阶段 B 待本机执行。
 
+## 2026-05-09
+
+- 本机 Webots：**`D:\Webots\msys64\mingw64\bin\webots.exe`**（R2025a）。
+- 已跑 **`run_shake_eval.py --run-seconds 12`** 冒烟三组全过；报告 `generated/shake_eval/smoke12_report_20260509_114613.json`。
+
 ## 待办（下一会话优先）
 
-- [ ] 用户提供 Webots 路径或自行跑仿真后，把需合并的参数变更记入本文件
 - [ ] 将赛事 PDF 放入仓库并更新 `findings.md`
+- [ ] 若需大范围重调：跑 `auto_tune_webots_params.py` 或将 `run_shake_eval` 默认秒数拉长做统计

@@ -12,12 +12,11 @@
 
 ## 阶段 B — Webots 与参数
 
-- [ ] 在你本机确认 Webots 安装路径；用 `Webots/worlds/Robocup.wbt` 跑通 `line_follow_transfer`
+- [x] Webots 路径：`D:\Webots\msys64\mingw64\bin\webots.exe`（R2025a）；`run_shake_eval.py --run-seconds 12` 冒烟已通过
+- [ ] 按需跑完整时长（如 18～25 s）或 `auto_tune_webots_params.py` 做参数搜索
 - [ ] 新相机标定已进根目录 `line_follow_params.json`；复核 `scripts/check_camera_consistency.py` → PASS
 - [ ] 按需微调仿真侧 ROI / PID / `shake.*`（以短跑对照为主，不必从零重跑全部历史 sweep）
 - [ ] 将**确定上场**的键同步到 `OpenMV_flash/line_follow_params.json`（保持 `sim_opencv_distort: false`）
-
-**阻塞说明**：当前自动化环境未检测到 `webots` 可执行文件；阶段 B 需你在本机执行或提供 CLI 路径。
 
 ## 阶段 C — 二维码：指标与方案
 

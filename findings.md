@@ -17,3 +17,13 @@
 
 - `OpenMV_flash/line_follow_params.json` 为真机导向（如 `sim_opencv_distort: false`）。
 - 仓库根目录 `line_follow_params.json` 服务 Webots；二者 intentionally 不完全相同。
+
+## Webots 本机路径（已验证）
+
+- 可执行文件：**`D:\Webots\msys64\mingw64\bin\webots.exe`**（R2025a）
+- 与 `scripts/run_shake_eval.py` / `scripts/auto_tune_webots_params.py` 内候选列表第一项一致；此前若只在 `C:\Program Files` 查找会误判为「未安装」。
+
+## 自动化调参 / 评测入口
+
+- **三组抖动对照**（改参会恢复）：`python scripts/run_shake_eval.py`（可选 `--run-seconds 12` 冒烟，`18` 默认）
+- **随机搜索多 trial 调 Webots 段参数**：`python scripts/auto_tune_webots_params.py --webots-exe "D:/Webots/msys64/mingw64/bin/webots.exe" ...`
