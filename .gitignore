@@ -64,3 +64,6 @@ Thumbs.db
 # =========================
 generated/
 Webots/controllers/line_follow_transfer/generated/
+
+# 临时从 rule.pdf 抽取的全文文本（可自行再生成）
+docs/rules/_rule_full_extract.txt
