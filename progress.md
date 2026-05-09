@@ -1,18 +1,16 @@
-# 进度日志
+# 进度日志（**辅助**，可能与现状不完全同步）
 
-## 2026-05-08
+更可靠：**`git log`** + **`OpenMV_flash/`** + **`line_follow_params.json`**。
 
-- 新增 `OpenMV_flash/` 作为**唯一刷机工件目录**（`main.py` / `protocol_v2.py` / `line_follow_params.json`）。
-- 初装：`main.py` ← `CVpart/main/main_webots_aligned.py`；`protocol_v2.py` ← `CVpart/main/protocol_v2.py`；`line_follow_params.json` ← 原 `openmv_flash_package` 真机版。
-- 建立 `task_plan.md`（含 QR 指标与阶段 B–D）；`findings.md` 待用。
-- **Webots**：自动化环境未找到 `webots.exe`，阶段 B 待本机执行。
+## 近期提交里能看出的轨迹（约 2026-05）
 
-## 2026-05-09
+- `OpenMV_flash/` 成为唯一刷机工件目录；`CVpart/openmv_flash_package/` 仅保留跳转说明
+- 新相机标定 `calib_photos_manual_now` → 根 / 预设 / 刷机 `line_follow_params` 已更新
+- `qr_uart_test.py`：UART uint8 1–6、5 s 节流等迭代多轮
+- Webots：**`D:\Webots\...`** R2025a；`run_shake_eval.py --run-seconds 12` 冒烟曾通过（见当时 `generated/shake_eval/`）
 
-- 本机 Webots：**`D:\Webots\msys64\mingw64\bin\webots.exe`**（R2025a）。
-- 已跑 **`run_shake_eval.py --run-seconds 12`** 冒烟三组全过；报告 `generated/shake_eval/smoke12_report_20260509_114613.json`。
+## 未完成 / 需在代码与场地验证
 
-## 待办（下一会话优先）
-
-- [ ] 将赛事 PDF 放入仓库并更新 `findings.md`
-- [ ] 若需大范围重调：跑 `auto_tune_webots_params.py` 或将 `run_shake_eval` 默认秒数拉长做统计
+- [ ] 规则 PDF **纳入 `docs/rules/`** 并在 `findings.md` **摘录正式条款**（含二维码若存在）
+- [ ] QR：**是否**并入 `OpenMV_flash/main.py`（规则与赛程决定）
+- [ ] 仿真：换畸变后可按需再跑长评测 / `auto_tune`，非必须从零重做

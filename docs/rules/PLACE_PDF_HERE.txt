@@ -1,0 +1,4 @@
+将官方赛事规则 PDF 放进本目录后再提交 Git，便于团队对照与摘录条款。
+
+建议文件名：robocup_2025_engineering_humanoid_rules.pdf
+（你本地的「10.2赛事规则...pdf」可复制改名后置于此处。）
