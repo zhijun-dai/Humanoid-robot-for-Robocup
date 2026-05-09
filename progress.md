@@ -9,6 +9,10 @@
 - `qr_uart_test.py`：UART uint8 1–6、5 s 节流等迭代多轮
 - Webots：**`D:\Webots\...`** R2025a；`run_shake_eval.py --run-seconds 12` 冒烟曾通过（见当时 `generated/shake_eval/`）
 
+## 2026-05-10
+
+- **主程序二维码**：`main_webots_aligned.py` / `OpenMV_flash/main.py` 已并入 **1～6** 识别；`line_follow_params.openmv_webots_aligned` 增加 `qr_*` 键；协议 **`MSG_QR_EVENT`** + `PendingAcks`；下架仓库内重复长文件名规则 PDF（保留 `rule.pdf`）。
+
 ## 未完成 / 需在代码与场地验证
 
 - [ ] 规则 PDF **纳入 `docs/rules/`** 并在 `findings.md` **摘录正式条款**（含二维码若存在）
