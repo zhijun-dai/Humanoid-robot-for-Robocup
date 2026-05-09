@@ -1,8 +1,8 @@
 # line_follow_params.json 参数说明与调参建议
 
 本文档对应配置文件 line_follow_params.json，适用于：
-- OpenMV 主程序：CVpart/main/main1.py
-- Webots 迁移控制器：Webots/controllers/line_follow_transfer/line_follow_transfer.py
+- OpenMV 主程序：`CVpart/main/main_webots_aligned.py`（刷机见 `OpenMV_flash/main.py`）
+- Webots 迁移控制器：`Webots/controllers/line_follow_transfer/line_follow_transfer.py`
 
 目标是做到同一套参数在实机和仿真里共用，减少参数漂移。
 

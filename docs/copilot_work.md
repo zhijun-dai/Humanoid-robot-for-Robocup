@@ -52,7 +52,7 @@
 - `docker login nvcr.io`（需要 NGC API Key）。
 - 拉取 `nvcr.io/nvidia/isaac-sim:4.5.0`。
 - 运行 120 秒 headless 冒烟测试并采集日志。
-- 回传是否可稳定仿真，以及下一步与 main1test 对接计划。
+- 回传是否可稳定仿真，以及下一步与 `main_webots_aligned` / OpenMV 对接计划。
 
 ## 说明
 - 本次工作已尽量自动化执行并保留中间日志路径（/tmp 与 /root/isaac/logs）。

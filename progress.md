@@ -13,6 +13,8 @@
 
 - **主程序二维码**：`main_webots_aligned.py` / `OpenMV_flash/main.py` 已并入 **1～6** 识别；`line_follow_params.openmv_webots_aligned` 增加 `qr_*` 键；协议 **`MSG_QR_EVENT`** + `PendingAcks`；下架仓库内重复长文件名规则 PDF（保留 `rule.pdf`）。
 
+- **目录清理**：删除 `CVpart/main/` 下早期测试 `main0.py`、`main_test0.py`、`main1test.py`、`autotune_main1test.py`、`autotune_best.json`；更新 `CVpart/README.md`、`findings.md`、`docs/line_follow_params_参数说明.md`。
+
 ## 未完成 / 需在代码与场地验证
 
 - [ ] 规则 PDF **纳入 `docs/rules/`** 并在 `findings.md` **摘录正式条款**（含二维码若存在）

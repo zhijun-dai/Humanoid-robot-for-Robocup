@@ -1,7 +1,20 @@
 # README
 这个文件夹包含了CV相关的代码和资源。请根据需要浏览和使用其中的内容。
 
-需要运行的程序在 main 里
+需要运行的程序在 `main/` 目录。
+
+### `main/` 内保留哪些脚本（精简后）
+
+| 文件 | 用途 |
+|------|------|
+| **`main_webots_aligned.py`** | 与 Webots 对齐的**主程序**（巡线 + 协议 V2 + 二维码）；刷机副本见仓库 **`OpenMV_flash/main.py`** |
+| **`main1.py`** | 轻量三 ROI **参考**实现（Webots 里部分映射仍引用其约定） |
+| **`protocol_v2.py`** | 通讯协议母本；与 `OpenMV_flash/protocol_v2.py` 同步 |
+| **`openmv_capture_photos.py`** / **`openmv_capture_photos_manual.py`** | 标定拍照 |
+| **`uart_link_test.py`** | UART 联通小测 |
+| **`qr_uart_test.py`** | 仅二维码 + UART **单飞测试**（无巡线） |
+
+已删除的早期/冗余物：**`main0.py`、`main_test0.py`、PC 侧 `main1test.py`、`autotune_main1test.py`、`autotune_best.json`**（避免与当前流水线混淆；需要时从 Git 历史恢复）。
 
 ## AI prompt
 1. 对代码的每一句话进行注释，说明其功能和作用，除非特别说明
