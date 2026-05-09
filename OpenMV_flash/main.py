@@ -1,4 +1,4 @@
-# main_webots_aligned.py
+# main_webots_aligned.py（OpenMV_flash 刷机副本 — 上场前在此目录改，或从 CVpart/main/main_webots_aligned.py 同步）
 # 与 Webots/controllers/line_follow_transfer/line_follow_transfer.py 对齐：
 # 三路带扫描、简单底区、底部锁、像素域融合、PID、shake_robust、协议输出。
 # main1.py 保留为轻量三 ROI 方案；本脚本用于「与仿真同款流水线」对照 / 真机验证。

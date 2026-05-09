@@ -1,16 +1,8 @@
-OpenMV H7 Plus 一键拷盘包（Webots 对齐巡线 + 协议 V2）
-====================================================
+【已迁移】一键刷机文件请到仓库根目录：
 
-本目录三个文件请全部复制到 OpenMV U 盘根目录（与 boot.py 同级），覆盖同名文件即可。
+  OpenMV_flash/
 
-  main.py              <- 由 main_webots_aligned.py 复制，上电自动运行
-  protocol_v2.py       <- 协议打包/解析
-  line_follow_params.json
+内含 main.py、protocol_v2.py、line_follow_params.json 与 README.md。
+请勿再在本目录维护副本；本文件仅作跳转说明。
 
-接线：UART1，P1=TX -> 主控 RX，P0=RX <- 主控 TX，GND 共地；115200 8N1。
-
-更新仓库里的参数后，请重新复制本目录中的 line_follow_params.json（或整包再拷一遍）。
-
-与仓库根目录 line_follow_params.json 的差异（仅仿真相关，便于上真机）：
-  - camera.calibration.sim_opencv_distort = false
-  - shake.enable = false
+历史：此前本目录与 OpenMV_flash 内容等价，以 OpenMV_flash 为唯一来源。
