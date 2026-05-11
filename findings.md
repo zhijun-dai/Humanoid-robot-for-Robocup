@@ -1,6 +1,6 @@
 # 研究笔记（工程约束）：**不是**项目进度的唯一真相源
 
-仓库里 **`task_plan.md`、`progress.md`、`本文件`** 以及散落各处的说明，都**可能被某次会话写过但没续更**。  
+本目录（根目录）中的 **`task_plan.md`、`progress.md`、`本文件`** 以及散落各处的说明，都**可能被某次会话写过但没续更**。  
 判断「现在做到哪了」请优先看：
 
 - **`git log`**（最近改了什么）
@@ -104,4 +104,4 @@
 ## 相机标定（新头）
 
 - 照片集：`calib_photos_manual_now/`；结果：`generated/camera_calibration_result_calib_photos_manual_now.json`（若 `generated/` 被 ignore，以提交记录与根 `line_follow_params` 为准）
-- 已写入根 `line_follow_params`、`presets`、`OpenMV_flash/line_follow_params`（数值以当前 JSON 文件为准）
+- 已写入根 `line_follow_params`、`config/presets`、`OpenMV_flash/line_follow_params`（数值以当前 JSON 文件为准）

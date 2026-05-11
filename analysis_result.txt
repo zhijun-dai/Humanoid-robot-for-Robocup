@@ -1,6 +1,0 @@
-日志路径: D:\用户\Lenovo\桌面\Robocup\generated\manual_webots_logs_live\trial_20260419_215534.log
-N=0, n10=0
-前10秒指标: 无匹配样本
-后10秒指标: 样本不足(N<80)
-结论: 未见明显掉链（按阈值）
-前10条匹配遥测原始行:

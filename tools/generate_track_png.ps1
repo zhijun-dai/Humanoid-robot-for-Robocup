@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.Drawing
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dxfPath = Join-Path $repoRoot 'dxf_out\2025人形竞技全能场地图纸.dxf'
-$jsonPath = Join-Path $repoRoot '场地参数基线.json'
+$jsonPath = Join-Path $repoRoot 'config\field\场地参数基线.json'
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $outPath = Join-Path $repoRoot 'generated\track_competition_from_dxf.png'
 }

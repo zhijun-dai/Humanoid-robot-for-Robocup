@@ -1,9 +1,9 @@
 # RoboCup CV / OpenMV / 仿真 — 任务计划
 
-> **注意**：本文件是规划草稿，**不一定反映最新进度**。请以 **`git log`、`OpenMV_flash/`、根目录 `line_follow_params.json`** 为准；细则见 `findings.md` 开头说明。
+> **注意**：本文件是规划草稿，**不一定反映最新进度**。请以 **`git log`、`OpenMV_flash/`、根目录 `line_follow_params.json`** 为准；细则见同目录 `findings.md` 开头说明。
 >
 > 导师要求摘要：**大倾角鲁棒**、**低延迟（0.5 s 量级优于 1 s）**、**提前约 20 cm 能稳检**；测试是为了找问题，不是声称没问题。  
-> 规则 PDF：**`rule.pdf`**（仓库根目录）；与 QR/视觉相关的正式条款摘录见 **`findings.md`**。
+> 规则 PDF：**`rule.pdf`**（仓库根目录）；与 QR/视觉相关的正式条款摘录见 **`findings.md`**（本目录）。
 
 ---
 

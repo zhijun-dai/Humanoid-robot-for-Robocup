@@ -7,3 +7,12 @@
 - 红色虚线：有一条垂直的红色虚线横跨赛道宽度（连接内圈和外圈），表示有一定高度的红色的横棍，比赛中需要跨过。
 - 黑色实线：在红色虚线的右侧，有一条垂直的黑色实线，同样连接内外圈表示起点和终点。
 这两条线与赛道边界共同围成了一个狭长的矩形区域，机器人需要在这个区域内完成特定的动作（如跨越红色横棍）才能继续前进。
+
+## 文档与配置放在哪
+
+- **规划 / 研究笔记 / 接手说明**：[`docs/project/`](docs/project/)（`AI_log.md`）；根目录 `task_plan.md`、`findings.md`、`progress.md`
+- **场地与对照用 JSON（非主仿真配置）**：[`config/`](config/)，说明见 [`config/README.md`](config/README.md)
+- **仿真与脚本默认巡线参数**：仓库根目录 [`line_follow_params.json`](line_follow_params.json)（勿随意改路径，控制器与多脚本硬编码指向此处）
+- **OpenMV 刷机**：[`OpenMV_flash/`](OpenMV_flash/)
+- **规则 PDF**：根目录 `rule.pdf`
+- **其余技术文档**：[`docs/`](docs/)

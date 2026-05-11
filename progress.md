@@ -5,7 +5,7 @@
 ## 近期提交里能看出的轨迹（约 2026-05）
 
 - `OpenMV_flash/` 成为唯一刷机工件目录；`CVpart/openmv_flash_package/` 仅保留跳转说明
-- 新相机标定 `calib_photos_manual_now` → 根 / 预设 / 刷机 `line_follow_params` 已更新
+- 新相机标定 `calib_photos_manual_now` → 根 / `config/presets` / 刷机 `line_follow_params` 已更新
 - `qr_uart_test.py`：UART uint8 1–6、5 s 节流等迭代多轮
 - Webots：**`D:\Webots\...`** R2025a；`run_shake_eval.py --run-seconds 12` 冒烟曾通过（见当时 `generated/shake_eval/`）
 
