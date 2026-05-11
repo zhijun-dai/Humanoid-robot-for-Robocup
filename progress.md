@@ -15,8 +15,15 @@
 
 - **目录清理**：删除 `CVpart/main/` 下早期测试 `main0.py`、`main_test0.py`、`main1test.py`、`autotune_main1test.py`、`autotune_best.json`；更新 `CVpart/README.md`、`findings.md`、`docs/line_follow_params_参数说明.md`。
 
+## 2026-05-11 — QR 鲁棒性强化
+
+- **QR 算法**：ROI 裁剪到下半区 55%、3x 放大（原 2x）、histeq 开、尺寸过滤（min 12px / max 300px / min area 60px²）、lens_corr + 无校正双管道重试、调试日志输出码尺寸/位置/校正标记
+- **配置**：根 `line_follow_params.json` 与 `OpenMV_flash/line_follow_params.json` 同步新 QR 参数
+- **仓库整理**：删除过时的 `line_follow.py`（763 行孤本）、空 `docs/rules/`；规划文件迁到根目录；创建 `CLAUDE.md`
+- **同步**：`CVpart/main/main_webots_aligned.py` ↔ `OpenMV_flash/main.py` 保持对齐
+
 ## 未完成 / 需在代码与场地验证
 
-- [ ] 规则 PDF **纳入 `docs/rules/`** 并在 `findings.md` **摘录正式条款**（含二维码若存在）
-- [ ] QR：**是否**并入 `OpenMV_flash/main.py`（规则与赛程决定）
-- [ ] 仿真：换畸变后可按需再跑长评测 / `auto_tune`，非必须从零重做
+- [ ] 真场 QR 测试（距离 × 倾角 × 光照）验证新参数
+- [ ] 仿真：换畸变后按需跑 Webots 长评测 / `auto_tune`
+- [ ] 红色障碍检测：真机是否切 RGB565？（当前灰度下关闭）
