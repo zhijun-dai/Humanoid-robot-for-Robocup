@@ -263,7 +263,17 @@
     "qr_send_cooldown_ms": 3200,
     "qr_request_ack": true,
     "qr_only_when_tracking": true,
-    "qr_min_line_conf": 0.22
+    "qr_min_line_conf": 0.22,
+    "qr_patch_scale": 3,
+    "qr_roi_width_frac": 1.0,
+    "qr_roi_height_frac": 0.55,
+    "qr_roi_y_anchor": "bottom",
+    "qr_decode_histeq": true,
+    "qr_retry_without_lens_corr": true,
+    "qr_min_pixels": 12,
+    "qr_max_pixels": 300,
+    "qr_min_area": 60,
+    "qr_debug_log": true
   },
   "webots": {
     "base_speed": 6.28,

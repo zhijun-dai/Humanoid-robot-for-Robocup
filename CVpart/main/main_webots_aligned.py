@@ -1,7 +1,7 @@
 # main_webots_aligned.py
 # 与 Webots/controllers/line_follow_transfer/line_follow_transfer.py 对齐：
 # 三路带扫描、简单底区、底部锁、像素域融合、PID、shake_robust、协议输出。
-# 集成赛事二维码 1~6：copy + lens_corr + 防抖/冷却，发 protocol MSG_QR_EVENT（见 openmv_webots_aligned.*）。
+# 集成赛事二维码 1~6：ROI/放大图解码 + lens_corr/无校正重试 + 防抖/冷却，发 protocol MSG_QR_EVENT（见 openmv_webots_aligned.*）。
 # main1.py 保留为轻量三 ROI 方案；本脚本用于「与仿真同款流水线」对照 / 真机验证。
 #
 # 说明：OpenMV 默认灰度图时无法做红色识别，红块禁行视为关闭（仅保留跨线黑块启发）。
@@ -80,7 +80,7 @@ BAND_ROWS_FACTOR = float(OMV_WA.get("band_rows_factor", 0.78))
 USE_HISTEQ = bool(OMV_WA.get("use_histeq", False))
 RED_ON_GRAY = bool(OMV_WA.get("red_detect_on_grayscale", False))
 
-# 赛事二维码（规则：数字 1~6；5cm 码）。与巡线并行：降采样帧上 lens_corr + 多帧确认 + 冷却 + 可选 MSG_QR_EVENT。
+# 赛事二维码（规则：数字 1~6；5cm 码）。与巡线并行：ROI/放大解码图 + lens_corr + 可选无校正重试 + 多帧确认 + 冷却 + MSG_QR_EVENT。
 QR_ENABLE = bool(OMV_WA.get("qr_enable", True))
 QR_EVERY_N_FRAMES = max(1, int(OMV_WA.get("qr_every_n_frames", 3)))
 QR_LENS_CORR = float(OMV_WA.get("qr_lens_corr_strength", 1.35))
@@ -89,6 +89,11 @@ QR_COOLDOWN_MS = max(400, int(OMV_WA.get("qr_send_cooldown_ms", 3200)))
 QR_REQUEST_ACK = bool(OMV_WA.get("qr_request_ack", True))
 QR_ONLY_WHEN_TRACKING = bool(OMV_WA.get("qr_only_when_tracking", True))
 QR_MIN_CONF = float(OMV_WA.get("qr_min_line_conf", 0.22))
+QR_RETRY_NO_LENS = bool(OMV_WA.get("qr_retry_without_lens_corr", True))
+QR_MIN_PIXELS = int(OMV_WA.get("qr_min_pixels", 12))
+QR_MAX_PIXELS = int(OMV_WA.get("qr_max_pixels", 300))
+QR_MIN_AREA = int(OMV_WA.get("qr_min_area", 60))
+QR_DEBUG_LOG = bool(OMV_WA.get("qr_debug_log", True))
 QR_ACTION_MAP = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6}
 
 
@@ -329,6 +334,104 @@ def clamp(v, lo, hi):
 	if v > hi:
 		return hi
 	return v
+
+
+def _qr_image_for_decode(src):
+	"""裁 ROI（可选）再整数倍放大，提高 QQVGA 下二维码模块像素数。"""
+	w0 = src.width()
+	h0 = src.height()
+	rw = float(OMV_WA.get("qr_roi_width_frac", 1.0))
+	rh = float(OMV_WA.get("qr_roi_height_frac", 1.0))
+	anchor = str(OMV_WA.get("qr_roi_y_anchor", "bottom"))
+	rw = clamp(rw, 0.2, 1.0)
+	rh = clamp(rh, 0.2, 1.0)
+	if rw >= 0.999 and rh >= 0.999:
+		qimg = src.copy()
+	else:
+		roi_w = max(8, min(w0, int(w0 * rw + 0.5)))
+		roi_h = max(8, min(h0, int(h0 * rh + 0.5)))
+		rx = max(0, (w0 - roi_w) // 2)
+		if anchor == "center":
+			ry = max(0, (h0 - roi_h) // 2)
+		else:
+			ry = max(0, h0 - roi_h)
+		qimg = src.copy(roi=(rx, ry, roi_w, roi_h))
+	ps = int(OMV_WA.get("qr_patch_scale", 2))
+	ps = max(1, min(ps, 4))
+	if ps > 1:
+		nw = max(8, qimg.width() * ps)
+		nh = max(8, qimg.height() * ps)
+		try:
+			qimg = qimg.resize(nw, nh)
+		except Exception:
+			pass
+	if bool(OMV_WA.get("qr_decode_histeq", False)):
+		try:
+			qimg = qimg.histeq()
+		except Exception:
+			pass
+	return qimg
+
+
+def _qr_extract_payload(qimg):
+	"""从图像提取可动作二维码 payload；
+	按尺寸过滤（后 upsample 尺度），返回 (payload, debug_dict) 或 (None, None)。"""
+	if qimg is None:
+		return None, None
+	try:
+		qrs = qimg.find_qrcodes()
+	except Exception:
+		return None, None
+	if not qrs:
+		return None, None
+	best = None
+	best_area = 0
+	best_dbg = None
+	for qr in qrs:
+		pl = qr.payload().strip()
+		if pl not in QR_ACTION_MAP:
+			continue
+		w, h = qr.w(), qr.h()
+		mx = max(w, h)
+		mn = min(w, h)
+		area = w * h
+		if mx < QR_MIN_PIXELS or mx > QR_MAX_PIXELS:
+			continue
+		if mn <= 0:
+			continue
+		if area < QR_MIN_AREA:
+			continue
+		if area > best_area:
+			best_area = area
+			best = pl
+			best_dbg = {"w": w, "h": h, "x": qr.x(), "y": qr.y(), "area": area}
+	return best, best_dbg
+
+
+def _qr_try_decode_from_base(qbase):
+	"""先 lens_corr（若配置），失败则可再试未校正图（透视大时偶发更稳）。
+	返回 (payload, debug_info) 或 (None, None)。"""
+	if qbase is None:
+		return None, None
+	order = []
+	if QR_LENS_CORR > 0.01:
+		order.append(True)
+	order.append(False)
+	for use_lens in order:
+		if use_lens is False and len(order) > 1 and (not QR_RETRY_NO_LENS):
+			break
+		try:
+			qx = qbase.copy()
+			if use_lens:
+				qx = qx.lens_corr(QR_LENS_CORR)
+			pl, dbg = _qr_extract_payload(qx)
+			if pl is not None:
+				if dbg is not None:
+					dbg["lens"] = use_lens
+				return pl, dbg
+		except Exception:
+			pass
+	return None, None
 
 
 def median(vals):
@@ -1302,23 +1405,17 @@ while True:
 		conf_ok = avg_conf >= QR_MIN_CONF
 		if track_ok and conf_ok and (_qr_tick % QR_EVERY_N_FRAMES == 0):
 			try:
-				qimg = img.copy()
-				if QR_LENS_CORR > 0.01:
-					qimg = qimg.lens_corr(QR_LENS_CORR)
-				qrs = qimg.find_qrcodes()
-				qr_pl = None
-				if qrs:
-					for qr in qrs:
-						pl = qr.payload().strip()
-						if pl in QR_ACTION_MAP:
-							qr_pl = pl
-							break
+				qbase = _qr_image_for_decode(img)
+				qr_pl, qr_dbg = _qr_try_decode_from_base(qbase)
 				if qr_pl is not None:
 					if qr_pl == _qr_cand:
 						_qr_cand_n += 1
 					else:
 						_qr_cand = qr_pl
 						_qr_cand_n = 1
+						if QR_DEBUG_LOG and qr_dbg is not None:
+							print("qr new pl=%s w=%d h=%d lens=%s"
+								% (qr_pl, qr_dbg["w"], qr_dbg["h"], qr_dbg.get("lens", "?")))
 					if _qr_cand_n >= QR_STABLE_FRAMES:
 						if _last_qr_ms is None or time.ticks_diff(n, _last_qr_ms) >= QR_COOLDOWN_MS:
 							u = QR_ACTION_MAP[qr_pl]
@@ -1331,6 +1428,8 @@ while True:
 							else:
 								_uart_send(bytes([u]))
 							_last_qr_ms = n
+							if QR_DEBUG_LOG:
+								print("qr send=%d (%s)" % (u, qr_pl))
 							_qr_cand_n = 0
 							LED(2).toggle()
 				else:
