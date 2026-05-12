@@ -69,6 +69,8 @@ QR_ACTION_MAP = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6}
 SEND_UART = True              # 是否实际发送 UART（False=纯观察模式）
 DRAW_DEBUG = True             # 是否在图像上画框和文字
 LOG_EVERY_FRAME = True        # True=逐帧打日志，False=仅摘要
+LOG_TO_FILE = True            # 是否把日志写到板载 flash 文件
+LOG_FILE = "qr_test_log.txt"  # 日志文件名（存 OpenMV 板载 /flash/）
 
 # 专项测试用最高分辨率 VGA（640×480）保证识别率，帧率慢一点无所谓。
 # VGA 像素是 QQVGA 的 16 倍，5cm 码在画面中占据足够模块像素。
@@ -282,35 +284,70 @@ IMG_W = sensor.width()
 IMG_H = sensor.height()
 
 
+# ── 文件日志 ────────────────────────────────────────────────────
+_log_fh = None
+
+def _log_open():
+	global _log_fh
+	if not LOG_TO_FILE:
+		return
+	try:
+		_log_fh = open(LOG_FILE, "w")  # 新会话覆盖旧日志
+	except Exception:
+		_log_fh = None
+
+
+def _log_write(msg):
+	"""同时写终端和日志文件。"""
+	print(msg)
+	if _log_fh is not None:
+		try:
+			_log_fh.write(msg + "\n")
+			_log_fh.flush()
+		except Exception:
+			pass
+
+
+def _log_close():
+	global _log_fh
+	if _log_fh is not None:
+		try:
+			_log_fh.close()
+		except Exception:
+			pass
+		_log_fh = None
+
+
+_log_open()
+
 # ── 打印启动信息 ────────────────────────────────────────────────
 def fmt_bool(v):
 	return "1" if v else "0"
 
 
-print("")
-print("=" * 60)
-print("  QR Test — Multi-Strategy (pipe + raw_lens + raw)  (algorithm mirrors main_webots_aligned.py)")
-print("=" * 60)
-print("  resolution     : %dx%d  %s" % (IMG_W, IMG_H, RESOLUTION))
-print("  patch_scale    : %d" % QR_PATCH_SCALE)
-print("  roi            : w=%.2f  h=%.2f  anchor=%s" % (QR_ROI_W, QR_ROI_H, QR_ROI_ANCHOR))
-print("  histeq         : %s" % fmt_bool(QR_HISTEQ))
-print("  lens_corr      : %.2f  (retry_no_lens=%s)" % (QR_LENS_CORR, fmt_bool(QR_RETRY_NO_LENS)))
-print("  stable_frames  : %d" % QR_STABLE_FRAMES)
-print("  cooldown_ms    : %d" % QR_COOLDOWN_MS)
-print("  size_filter    : min=%dpx  max=%dpx  min_area=%d" % (QR_MIN_PIXELS, QR_MAX_PIXELS, QR_MIN_AREA))
-print("  every_n_frames : %d" % QR_EVERY_N_FRAMES)
-print("  send_uart      : %s" % fmt_bool(SEND_UART))
-print("  draw_debug     : %s" % fmt_bool(DRAW_DEBUG))
+_log_write("")
+_log_write("=" * 60)
+_log_write("  QR Test — Multi-Strategy (pipe + raw_lens + raw)")
+_log_write("  Sensor: %dx%d %s  |  No frame skip  |  Log: %s"
+	% (IMG_W, IMG_H, RESOLUTION, LOG_FILE if LOG_TO_FILE else "off"))
+_log_write("=" * 60)
+_log_write("  patch_scale    : %d  (auto-adapted to resolution)" % QR_PATCH_SCALE)
+_log_write("  roi            : w=%.2f  h=%.2f  anchor=%s" % (QR_ROI_W, QR_ROI_H, QR_ROI_ANCHOR))
+_log_write("  histeq         : %s" % fmt_bool(QR_HISTEQ))
+_log_write("  lens_corr      : %.2f  (retry_no_lens=%s)" % (QR_LENS_CORR, fmt_bool(QR_RETRY_NO_LENS)))
+_log_write("  stable_frames  : %d" % QR_STABLE_FRAMES)
+_log_write("  cooldown_ms    : %d" % QR_COOLDOWN_MS)
+_log_write("  size_filter    : min=%dpx  max=%dpx  min_area=%d" % (QR_MIN_PIXELS, QR_MAX_PIXELS, QR_MIN_AREA))
+_log_write("  send_uart      : %s  draw_debug=%s" % (fmt_bool(SEND_UART), fmt_bool(DRAW_DEBUG)))
 if not SHARED_CFG:
-	print("  WARNING: could not load line_follow_params.json — using defaults")
-print("-" * 60)
-print("  Ready. Point camera at a QR code (1-6).")
-print("")
-print("  LEGEND:  . = no QR   3! = detected 3   3* = candidate building")
-print("           3>>> = SENT 3  via UART        3? = rejected by filter")
-print("=" * 60)
-print("")
+	_log_write("  WARNING: could not load line_follow_params.json — using defaults")
+_log_write("-" * 60)
+_log_write("  Ready. Point camera at a QR code (1-6).")
+_log_write("")
+_log_write("  LEGEND:  . = no QR   3! = detected   3* = confirming")
+_log_write("           3>>> = SENT via UART         3? = filter rejected")
+_log_write("=" * 60)
+_log_write("")
 
 # ── 运行时状态 ──────────────────────────────────────────────────
 clock = time.clock()
@@ -373,8 +410,8 @@ while True:
 			qr_candidate = qr_pl
 			qr_candidate_count = 1
 			first_candidate_ms = n
-			print("")
-			print("  [%06d] NEW  pl=%s  %dx%d px  lens=%s  strat=%s  decode=%dus"
+			_log_write("")
+			_log_write("  [%06d] NEW  pl=%s  %dx%d px  lens=%s  strat=%s  decode=%dus"
 				% (frame_idx, qr_pl, w, h, lens_str, strategy, t_decode_us))
 
 		# 稳定确认 → 发送
@@ -396,10 +433,10 @@ while True:
 				stat_latency_ms.append(latency)
 				sent = True
 				LED(2).toggle()
-				print("")
-				print("  [%06d] >>> SEND action=%d (pl=%s)  latency=%dms  %dx%d px  lens=%s  strat=%s"
+				_log_write("")
+				_log_write("  [%06d] >>> SEND action=%d (pl=%s)  latency=%dms  %dx%d px  lens=%s  strat=%s"
 					% (frame_idx, u, qr_pl, latency, w, h, lens_str, strategy))
-				print("")
+				_log_write("")
 
 		# 逐帧符号
 		if not sent and LOG_EVERY_FRAME:
@@ -430,8 +467,8 @@ while True:
 		fps = stat_total_frames / max(1, elapsed_s) if elapsed_s > 0 else 0
 		detect_pct = 100.0 * stat_detect_frames / max(1, stat_total_frames)
 		avg_lat = int(sum(stat_latency_ms) / max(1, len(stat_latency_ms)))
-		print("")
-		print("  --- stats: frames=%d  detect=%.1f%%  sent=%d  reject=%d  latency_avg=%dms  fps=%.1f ---"
+		_log_write("")
+		_log_write("  --- stats: frames=%d  detect=%.1f%%  sent=%d  reject=%d  latency_avg=%dms  fps=%.1f ---"
 			% (stat_total_frames, detect_pct, stat_sent_count, stat_reject_count, avg_lat, fps))
 		# 重置每秒计数
 		stat_total_frames = 0
