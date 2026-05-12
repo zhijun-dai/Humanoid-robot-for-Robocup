@@ -59,7 +59,6 @@ QR_RETRY_NO_LENS = bool(OMV_WA.get("qr_retry_without_lens_corr", True))
 QR_MIN_PIXELS = int(OMV_WA.get("qr_min_pixels", 12))
 QR_MAX_PIXELS = int(OMV_WA.get("qr_max_pixels", 300))
 QR_MIN_AREA = int(OMV_WA.get("qr_min_area", 60))
-QR_PATCH_SCALE = int(OMV_WA.get("qr_patch_scale", 3))
 QR_ROI_W = float(OMV_WA.get("qr_roi_width_frac", 1.0))
 QR_ROI_H = float(OMV_WA.get("qr_roi_height_frac", 0.55))
 QR_ROI_ANCHOR = str(OMV_WA.get("qr_roi_y_anchor", "bottom"))
@@ -71,13 +70,33 @@ SEND_UART = True              # 是否实际发送 UART（False=纯观察模式�
 DRAW_DEBUG = True             # 是否在图像上画框和文字
 LOG_EVERY_FRAME = True        # True=逐帧打日志，False=仅摘要
 
-RESOLUTION = str(OMV_WA.get("qr_test_resolution", "QQVGA")).upper()
-if RESOLUTION == "QVGA":
+# 专项测试用最高分辨率 VGA（640×480）保证识别率，帧率慢一点无所谓。
+# VGA 像素是 QQVGA 的 16 倍，5cm 码在画面中占据足够模块像素。
+# 确认 VGA 可行后再逐步降级测试 QQVGA/QVGA。
+RESOLUTION = str(OMV_WA.get("qr_test_resolution", "VGA")).upper()
+if RESOLUTION in ("QQVGA",):
+	SENSOR_FRAMESIZE = sensor.QQVGA
+elif RESOLUTION in ("QVGA",):
 	SENSOR_FRAMESIZE = sensor.QVGA
-elif RESOLUTION == "QQVGA":
-	SENSOR_FRAMESIZE = sensor.QQVGA
 else:
-	SENSOR_FRAMESIZE = sensor.QQVGA
+	SENSOR_FRAMESIZE = sensor.VGA  # 640x480, 最高
+
+# 按分辨率自动适配（不理会在 JSON 里为 QQVGA 主程序调的 qr_patch_scale 值）
+if SENSOR_FRAMESIZE == sensor.QQVGA:
+	QR_PATCH_SCALE = 3
+elif SENSOR_FRAMESIZE == sensor.QVGA:
+	QR_PATCH_SCALE = 2
+else:
+	QR_PATCH_SCALE = 1  # VGA: 像素足够，原图直接搜
+
+# VGA/QVGA 全图搜索；QQVGA 裁下半区聚焦地面
+if SENSOR_FRAMESIZE == sensor.QQVGA:
+	QR_ROI_H = 0.55
+else:
+	QR_ROI_H = 1.0   # VGA/QVGA 全图搜索
+
+# 测试时不跳帧：每帧都扫，最大化检出概率
+QR_EVERY_N_FRAMES = 1
 
 
 # ── 工具函数 ────────────────────────────────────────────────────
@@ -187,7 +206,47 @@ def _qr_try_decode_from_base(qbase):
 	return None, None
 
 
-# ── 绘制调试框 ──────────────────────────────────────────────────
+def _qr_decode_multi_strategy(img):
+	"""Multi-strategy decode: production pipe + raw lens_corr + raw search.
+	Returns (payload, debug_dict) where debug_dict["strategy"] is
+	"pipe" | "raw_lens" | "raw".
+	"""
+	# Strategy 1: production pipeline (crop -> upscale -> lens_corr/raw)
+	qbase = _qr_image_for_decode(img)
+	pl, dbg = _qr_try_decode_from_base(qbase)
+	if pl is not None:
+		if dbg is not None:
+			dbg["strategy"] = "pipe"
+		return pl, dbg
+
+	# Strategy 2: lens_corr on full original image (preserves real pixels)
+	# Best for QVGA+ where crop+upscale loses information
+	if QR_LENS_CORR > 0.01:
+		try:
+			qx = img.copy()
+			qx = qx.lens_corr(QR_LENS_CORR)
+			pl2, dbg2 = _qr_extract_payload(qx)
+			if pl2 is not None:
+				if dbg2 is not None:
+					dbg2["lens"] = True
+					dbg2["strategy"] = "raw_lens"
+				return pl2, dbg2
+		except Exception:
+			pass
+
+	# Strategy 3: raw full image (no lens_corr, no crop/upscale)
+	try:
+		qx = img.copy()
+		pl3, dbg3 = _qr_extract_payload(qx)
+		if pl3 is not None:
+			if dbg3 is not None:
+				dbg3["lens"] = False
+				dbg3["strategy"] = "raw"
+			return pl3, dbg3
+	except Exception:
+		pass
+
+	return None, None
 def draw_qr_debug(img, all_qr_info):
 	"""在主图像上绘制所有检出二维码的框和标签。"""
 	for pl, w, h, ok, qx, qy in all_qr_info:
@@ -230,7 +289,7 @@ def fmt_bool(v):
 
 print("")
 print("=" * 60)
-print("  QR Test — Hardened Pipeline  (algorithm mirrors main_webots_aligned.py)")
+print("  QR Test — Multi-Strategy (pipe + raw_lens + raw)  (algorithm mirrors main_webots_aligned.py)")
 print("=" * 60)
 print("  resolution     : %dx%d  %s" % (IMG_W, IMG_H, RESOLUTION))
 print("  patch_scale    : %d" % QR_PATCH_SCALE)
@@ -288,8 +347,7 @@ while True:
 
 	# ── QR 解码（与主程序 100% 一致） ──
 	t0 = time.ticks_us()
-	qbase = _qr_image_for_decode(img)
-	qr_pl, qr_dbg = _qr_try_decode_from_base(qbase)
+	qr_pl, qr_dbg = _qr_decode_multi_strategy(img)
 	t_decode_us = time.ticks_diff(time.ticks_us(), t0)
 
 	# ── 提取全部检出信息用于调试绘制 ──
@@ -306,6 +364,7 @@ while True:
 		h = qr_dbg["h"] if qr_dbg else 0
 		lens = qr_dbg.get("lens", "?") if qr_dbg else "?"
 		lens_str = "corr" if lens is True else ("raw" if lens is False else str(lens))
+		strategy = qr_dbg.get("strategy", "?") if qr_dbg else "?"
 
 		# 去重 + 稳定计数
 		if qr_pl == qr_candidate:
@@ -315,8 +374,8 @@ while True:
 			qr_candidate_count = 1
 			first_candidate_ms = n
 			print("")
-			print("  [%06d] NEW  pl=%s  %dx%d px  lens=%s  decode=%dus"
-				% (frame_idx, qr_pl, w, h, lens_str, t_decode_us))
+			print("  [%06d] NEW  pl=%s  %dx%d px  lens=%s  strat=%s  decode=%dus"
+				% (frame_idx, qr_pl, w, h, lens_str, strategy, t_decode_us))
 
 		# 稳定确认 → 发送
 		sent = False
@@ -338,8 +397,8 @@ while True:
 				sent = True
 				LED(2).toggle()
 				print("")
-				print("  [%06d] >>> SEND action=%d (pl=%s)  latency=%dms  %dx%d px  lens=%s"
-					% (frame_idx, u, qr_pl, latency, w, h, lens_str))
+				print("  [%06d] >>> SEND action=%d (pl=%s)  latency=%dms  %dx%d px  lens=%s  strat=%s"
+					% (frame_idx, u, qr_pl, latency, w, h, lens_str, strategy))
 				print("")
 
 		# 逐帧符号
