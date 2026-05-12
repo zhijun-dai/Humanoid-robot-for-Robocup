@@ -14,6 +14,7 @@
 import sensor
 import image
 import time
+import gc
 from pyb import UART, LED
 
 try:
@@ -120,27 +121,27 @@ def now_ms():
 # ── QR 管线（与主程序 _qr_image_for_decode / _qr_extract_payload / _qr_try_decode_from_base 完全一致）──
 
 def _qr_image_for_decode(src):
+	"""准备解码用图。若无裁剪/放大/直方图需求则直接返回原图（省一次拷贝）。"""
 	w0 = src.width()
 	h0 = src.height()
 	rw = clamp(QR_ROI_W, 0.2, 1.0)
 	rh = clamp(QR_ROI_H, 0.2, 1.0)
-	if rw >= 0.999 and rh >= 0.999:
-		qimg = src.copy()
-	else:
+	need_roi = rw < 0.999 or rh < 0.999
+	need_scale = QR_PATCH_SCALE > 1
+	if not need_roi and not need_scale and not QR_HISTEQ:
+		return src  # 省拷贝，调用方只读
+	if need_roi:
 		roi_w = max(8, min(w0, int(w0 * rw + 0.5)))
 		roi_h = max(8, min(h0, int(h0 * rh + 0.5)))
 		rx = max(0, (w0 - roi_w) // 2)
-		if QR_ROI_ANCHOR == "center":
-			ry = max(0, (h0 - roi_h) // 2)
-		else:
-			ry = max(0, h0 - roi_h)
+		ry = max(0, h0 - roi_h) if QR_ROI_ANCHOR != "center" else max(0, (h0 - roi_h) // 2)
 		qimg = src.copy(roi=(rx, ry, roi_w, roi_h))
+	else:
+		qimg = src.copy()
 	ps = max(1, min(QR_PATCH_SCALE, 4))
 	if ps > 1:
-		nw = max(8, qimg.width() * ps)
-		nh = max(8, qimg.height() * ps)
 		try:
-			qimg = qimg.resize(nw, nh)
+			qimg = qimg.resize(max(8, qimg.width() * ps), max(8, qimg.height() * ps))
 		except Exception:
 			pass
 	if QR_HISTEQ:
@@ -211,84 +212,47 @@ def _qr_try_decode_from_base(qbase):
 	return None, None
 
 
-def _qr_try_binary_decode(qx, label):
-	"""对灰度图做自适应二值化 → 搜码。QR 本身是黑白的，二值化消除灰阶噪声。"""
-	try:
-		# 用 Otsu 阈值二值化，使黑模块/白底分界锐利
-		th = qx.get_histogram().get_threshold().value()
-		bin_img = qx.copy().binary([(0, th)], invert=False)
-		# 再做一次二值化取反：保证黑码白底（QR 库期望）
-	except Exception:
-		return None, None
-	try:
-		qrs = bin_img.find_qrcodes()
-	except Exception:
-		return None, None
-	if not qrs:
-		return None, None
-	for qr in qrs:
-		pl = qr.payload().strip()
-		if pl in QR_ACTION_MAP:
-			w, h = qr.w(), qr.h()
-			if max(w, h) >= QR_MIN_PIXELS and max(w, h) <= QR_MAX_PIXELS and w * h >= QR_MIN_AREA:
-				dbg = {"w": w, "h": h, "x": qr.x(), "y": qr.y(), "area": w * h, "lens": False, "strategy": label}
-				return pl, dbg
+def _qr_scan_core(qx, label, lens_flag):
+	"""对已准备好的图搜码，返回 (payload, debug) 或 (None, None)。不拷贝。"""
+	pl, dbg = _qr_extract_payload(qx)
+	if pl is not None:
+		if dbg is not None:
+			dbg["lens"] = lens_flag
+			dbg["strategy"] = label
+		return pl, dbg
 	return None, None
 
 
 def _qr_decode_multi_strategy(img):
-	"""Multi-strategy: pipe + raw_lens + raw + binary_lens + binary_raw + up_binary_lens.
-	Returns (payload, debug_dict) where debug_dict["strategy"] identifies the winner."""
-	# S1: production pipeline (crop -> upscale -> lens_corr/raw)
+	"""Multi-strategy decoder with explicit GC between attempts to keep heap low.
+	Strategies ordered by expected hit-rate: pipe → raw_lens → raw."""
+	# S1: production pipeline (crop → upscale → lens_corr/raw)
 	qbase = _qr_image_for_decode(img)
 	pl, dbg = _qr_try_decode_from_base(qbase)
 	if pl is not None:
 		if dbg is not None:
 			dbg["strategy"] = "pipe"
 		return pl, dbg
+	del qbase  # 释放中间图
+	gc.collect()
 
-	# S2: lens_corr on full original (preserves real pixels)
+	# S2: lens_corr on full original → scan
 	if QR_LENS_CORR > 0.01:
 		try:
 			qx = img.copy()
-			qx = qx.lens_corr(QR_LENS_CORR)
-			pl2, dbg2 = _qr_extract_payload(qx)
+			qx.lens_corr(QR_LENS_CORR)
+			pl2, dbg2 = _qr_scan_core(qx, "raw_lens", True)
+			del qx
+			gc.collect()
 			if pl2 is not None:
-				if dbg2 is not None:
-					dbg2["lens"] = True
-					dbg2["strategy"] = "raw_lens"
 				return pl2, dbg2
 		except Exception:
 			pass
 
-	# S3: raw full image (no lens_corr)
-	try:
-		qx = img.copy()
-		pl3, dbg3 = _qr_extract_payload(qx)
-		if pl3 is not None:
-			if dbg3 is not None:
-				dbg3["lens"] = False
-				dbg3["strategy"] = "raw"
-			return pl3, dbg3
-	except Exception:
-		pass
-
-	# S4: lens_corr + binary threshold → 纯黑白搜码
-	if QR_LENS_CORR > 0.01:
-		try:
-			qx = img.copy()
-			qx = qx.lens_corr(QR_LENS_CORR)
-			pl4, dbg4 = _qr_try_binary_decode(qx, "bin_lens")
-			if pl4 is not None:
-				dbg4["lens"] = True
-				return pl4, dbg4
-		except Exception:
-			pass
-
-	# S5: raw binary (no lens_corr)
-	pl5, dbg5 = _qr_try_binary_decode(img.copy(), "bin_raw")
-	if pl5 is not None:
-		return pl5, dbg5
+	# S3: raw full image — 不拷贝，原图直接扫（_qr_extract_payload 只读）
+	pl3, dbg3 = _qr_scan_core(img, "raw", False)
+	if pl3 is not None:
+		return pl3, dbg3
 
 	return None, None
 def draw_qr_debug(img, all_qr_info):
