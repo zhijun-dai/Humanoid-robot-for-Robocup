@@ -72,16 +72,15 @@ LOG_EVERY_FRAME = True        # True=逐帧打日志，False=仅摘要
 LOG_TO_FILE = True            # 是否把日志写到板载 flash 文件
 LOG_FILE = "qr_test_log.txt"  # 日志文件名（存 OpenMV 板载 /flash/）
 
-# 专项测试用最高分辨率 VGA（640×480）保证识别率，帧率慢一点无所谓。
-# VGA 像素是 QQVGA 的 16 倍，5cm 码在画面中占据足够模块像素。
-# 确认 VGA 可行后再逐步降级测试 QQVGA/QVGA。
-RESOLUTION = str(OMV_WA.get("qr_test_resolution", "VGA")).upper()
+# QVGA (320×240) — H7+ 能稳定运行的最高分辨率。VGA (640×480) 会 OOM。
+# QVGA 像素是 QQVGA 的 4 倍，qr_uart_test.py 验证过这个距离/倾角下可行。
+RESOLUTION = str(OMV_WA.get("qr_test_resolution", "QVGA")).upper()
 if RESOLUTION in ("QQVGA",):
 	SENSOR_FRAMESIZE = sensor.QQVGA
-elif RESOLUTION in ("QVGA",):
-	SENSOR_FRAMESIZE = sensor.QVGA
+elif RESOLUTION in ("VGA",):
+	SENSOR_FRAMESIZE = sensor.VGA     # 注意：H7+ 上可能 OOM
 else:
-	SENSOR_FRAMESIZE = sensor.VGA  # 640x480, 最高
+	SENSOR_FRAMESIZE = sensor.QVGA    # 320x240，稳妥
 
 # 按分辨率自动适配（不理会在 JSON 里为 QQVGA 主程序调的 qr_patch_scale 值）
 if SENSOR_FRAMESIZE == sensor.QQVGA:
