@@ -72,29 +72,33 @@ LOG_EVERY_FRAME = True        # True=逐帧打日志，False=仅摘要
 LOG_TO_FILE = True            # 是否把日志写到板载 flash 文件
 LOG_FILE = "qr_test_log.txt"  # 日志文件名（存 OpenMV 板载 /flash/）
 
-# QVGA (320×240) — H7+ 能稳定运行的最高分辨率。VGA (640×480) 会 OOM。
-# QVGA 像素是 QQVGA 的 4 倍，qr_uart_test.py 验证过这个距离/倾角下可行。
+# VGA 全帧 640×480=307KB → OOM。改用 VGA sensor 开窗口只读下半区：
+# 640×200=128KB（1.7x QVGA），有 VGA 级横向分辨率且省掉天空区域。
+# QR 码在地面上，本来就在下半区，裁掉上半区不损失信息。
 RESOLUTION = str(OMV_WA.get("qr_test_resolution", "QVGA")).upper()
 if RESOLUTION in ("QQVGA",):
 	SENSOR_FRAMESIZE = sensor.QQVGA
-elif RESOLUTION in ("VGA",):
-	SENSOR_FRAMESIZE = sensor.VGA     # 注意：H7+ 上可能 OOM
-else:
-	SENSOR_FRAMESIZE = sensor.QVGA    # 320x240，稳妥
+	SENSOR_WINDOW = None
+elif RESOLUTION in ("QVGA",):
+	SENSOR_FRAMESIZE = sensor.QVGA
+	SENSOR_WINDOW = None
+else:  # VGA-windowed: 640×200 bottom strip
+	SENSOR_FRAMESIZE = sensor.VGA
+	SENSOR_WINDOW = (0, 280, 640, 200)  # x, y, w, h — bottom 200 rows
 
-# 按分辨率自动适配（不理会在 JSON 里为 QQVGA 主程序调的 qr_patch_scale 值）
+# 按分辨率自动适配 patch_scale
 if SENSOR_FRAMESIZE == sensor.QQVGA:
 	QR_PATCH_SCALE = 3
 elif SENSOR_FRAMESIZE == sensor.QVGA:
 	QR_PATCH_SCALE = 2
 else:
-	QR_PATCH_SCALE = 1  # VGA: 像素足够，原图直接搜
+	QR_PATCH_SCALE = 1  # VGA-windowed: 640px 够宽，不需要放大
 
-# VGA/QVGA 全图搜索；QQVGA 裁下半区聚焦地面
+# QQVGA 裁下半区聚焦地面；QVGA/VGA 全图（或窗口已裁）搜索
 if SENSOR_FRAMESIZE == sensor.QQVGA:
 	QR_ROI_H = 0.55
 else:
-	QR_ROI_H = 1.0   # VGA/QVGA 全图搜索
+	QR_ROI_H = 1.0
 
 # 测试时不跳帧：每帧都扫，最大化检出概率
 QR_EVERY_N_FRAMES = 1
@@ -207,12 +211,35 @@ def _qr_try_decode_from_base(qbase):
 	return None, None
 
 
+def _qr_try_binary_decode(qx, label):
+	"""对灰度图做自适应二值化 → 搜码。QR 本身是黑白的，二值化消除灰阶噪声。"""
+	try:
+		# 用 Otsu 阈值二值化，使黑模块/白底分界锐利
+		th = qx.get_histogram().get_threshold().value()
+		bin_img = qx.copy().binary([(0, th)], invert=False)
+		# 再做一次二值化取反：保证黑码白底（QR 库期望）
+	except Exception:
+		return None, None
+	try:
+		qrs = bin_img.find_qrcodes()
+	except Exception:
+		return None, None
+	if not qrs:
+		return None, None
+	for qr in qrs:
+		pl = qr.payload().strip()
+		if pl in QR_ACTION_MAP:
+			w, h = qr.w(), qr.h()
+			if max(w, h) >= QR_MIN_PIXELS and max(w, h) <= QR_MAX_PIXELS and w * h >= QR_MIN_AREA:
+				dbg = {"w": w, "h": h, "x": qr.x(), "y": qr.y(), "area": w * h, "lens": False, "strategy": label}
+				return pl, dbg
+	return None, None
+
+
 def _qr_decode_multi_strategy(img):
-	"""Multi-strategy decode: production pipe + raw lens_corr + raw search.
-	Returns (payload, debug_dict) where debug_dict["strategy"] is
-	"pipe" | "raw_lens" | "raw".
-	"""
-	# Strategy 1: production pipeline (crop -> upscale -> lens_corr/raw)
+	"""Multi-strategy: pipe + raw_lens + raw + binary_lens + binary_raw + up_binary_lens.
+	Returns (payload, debug_dict) where debug_dict["strategy"] identifies the winner."""
+	# S1: production pipeline (crop -> upscale -> lens_corr/raw)
 	qbase = _qr_image_for_decode(img)
 	pl, dbg = _qr_try_decode_from_base(qbase)
 	if pl is not None:
@@ -220,8 +247,7 @@ def _qr_decode_multi_strategy(img):
 			dbg["strategy"] = "pipe"
 		return pl, dbg
 
-	# Strategy 2: lens_corr on full original image (preserves real pixels)
-	# Best for QVGA+ where crop+upscale loses information
+	# S2: lens_corr on full original (preserves real pixels)
 	if QR_LENS_CORR > 0.01:
 		try:
 			qx = img.copy()
@@ -235,7 +261,7 @@ def _qr_decode_multi_strategy(img):
 		except Exception:
 			pass
 
-	# Strategy 3: raw full image (no lens_corr, no crop/upscale)
+	# S3: raw full image (no lens_corr)
 	try:
 		qx = img.copy()
 		pl3, dbg3 = _qr_extract_payload(qx)
@@ -246,6 +272,23 @@ def _qr_decode_multi_strategy(img):
 			return pl3, dbg3
 	except Exception:
 		pass
+
+	# S4: lens_corr + binary threshold → 纯黑白搜码
+	if QR_LENS_CORR > 0.01:
+		try:
+			qx = img.copy()
+			qx = qx.lens_corr(QR_LENS_CORR)
+			pl4, dbg4 = _qr_try_binary_decode(qx, "bin_lens")
+			if pl4 is not None:
+				dbg4["lens"] = True
+				return pl4, dbg4
+		except Exception:
+			pass
+
+	# S5: raw binary (no lens_corr)
+	pl5, dbg5 = _qr_try_binary_decode(img.copy(), "bin_raw")
+	if pl5 is not None:
+		return pl5, dbg5
 
 	return None, None
 def draw_qr_debug(img, all_qr_info):
@@ -275,6 +318,11 @@ LED(3).off()
 sensor.reset()
 sensor.set_pixformat(sensor.GRAYSCALE)
 sensor.set_framesize(SENSOR_FRAMESIZE)
+if SENSOR_WINDOW is not None:
+	try:
+		sensor.set_windowing(*SENSOR_WINDOW)
+	except Exception:
+		pass  # 窗口设置失败则用全帧
 sensor.skip_frames(time=1500)
 sensor.set_auto_gain(False)
 sensor.set_auto_whitebal(False)
