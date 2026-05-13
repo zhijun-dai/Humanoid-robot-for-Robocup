@@ -27,10 +27,10 @@ class LineDetector:
         th_min=25,
         th_max=120,
     ):
-        self.cam_h = cam_height_cm
+        self.cam_height = cam_height_cm
         self.cam_pitch = np.radians(cam_pitch_deg)
-        self.cam_w = cam_w
-        self.cam_h = cam_h
+        self.img_w = cam_w
+        self.img_h = cam_h
         self.track_w = track_width_cm
         self.bird_h = bird_h
         self.bird_w = bird_w
@@ -50,18 +50,18 @@ class LineDetector:
 
         # 地面前方 near~far cm 对应的图像行
         def ground_y(z_cm):
-            ray = np.arctan2(self.cam_h, z_cm)
+            ray = np.arctan2(self.cam_height, z_cm)
             v = ray - self.cam_pitch
-            return (0.5 - v / np.radians(44.0)) * self.cam_h
+            return (0.5 - v / np.radians(44.0)) * self.img_h
 
         y_far = ground_y(far)
         y_near = ground_y(near)
 
         # 源点：图像中的四边形（地面矩形在图像中的梯形投影）
         src = np.float32([
-            [self.cam_w - 1, y_near],           # 近处右
+            [self.img_w - 1, y_near],           # 近处右
             [0, y_near],                         # 近处左
-            [self.cam_w - 1, y_far],            # 远处右
+            [self.img_w - 1, y_far],            # 远处右
             [0, y_far],                          # 远处左
         ])
 
