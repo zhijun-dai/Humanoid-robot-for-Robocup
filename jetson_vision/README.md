@@ -1,32 +1,35 @@
-# Jetson Nano 视觉方案
+# Jetson Nano + USB 摄像头 视觉方案
 
-## 与 OpenMV 对比
+## 运行
 
-| 维度 | OpenMV H7+ | Jetson Nano + USB |
-|------|-----------|-------------------|
-| 分辨率 | QQVGA 160x120 | 640x480 起步 |
-| QR 解码 | `find_qrcodes()` 慢且弱 | `cv2.QRCodeDetector` 或 `pyzbar` |
-| 畸变校正 | 简化 `lens_corr(α)` 单参数 | 完整 Brown 模型 k1~k5 |
-| 巡线输出 | 4 种离散 (go/left/right/slight) | 连续转向角 (0.1°精度) |
-| 算力 | 单核 M7 480MHz | 四核 A57 + GPU (CUDA) |
-| 开发 | MicroPython, 受限 | 完整 Python3 + OpenCV + numpy |
-| 通信 | UART1 (P1/P0) | UART (ttyTHS1 或 USB转串口) |
+### 方法1：双击（最简单）
+双击 `jetson_vision/run_qr_test.bat`
+
+### 方法2：终端
+```powershell
+.venv\Scripts\python jetson_vision\usb_cam_qr_test.py
+```
+输出在同一个终端窗口里。开着 OpenCV 窗口，QR 码放摄像头前，终端会打印 SEND，按 ESC 退出。
 
 ## 目录
 
 ```
 jetson_vision/
-  vision_main.py     # 主循环
-  qr_detector.py     # QR 检测模块
-  line_detector.py   # 巡线模块
-  protocol_v2.py     # 协议 V2 (与 STM32 通信)
-  camera_config.py   # 相机配置/标定参数
-  config.py          # 统一参数加载
+  usb_cam_qr_test.py   # USB 摄像头 QR 测试（Windows 验证用）
+  run_qr_test.bat       # Windows 双击运行
+  vision_main.py        # 完整主循环（QR + 巡线 + 串口，部署到 Jetson）
+  qr_detector.py        # QR 检测模块（OpenCV QRCodeDetector）
+  line_detector.py      # 巡线模块（鸟瞰变换法）
+  protocol_v2.py        # 协议 V2（部署时从 CVpart/main/ 复制）
 ```
 
-## 通信
+## 与 OpenMV 代码的区分
 
-与 OpenMV 相同：UART 115200 8N1，Protocol V2 帧格式。
-Jetson Nano 的 UART:
-- `/dev/ttyTHS1` — 硬件 UART1 (引脚 8/10 on J41 header)
-- `/dev/ttyUSB0` — USB 转串口适配器
+| | OpenMV (`CVpart/main/`) | Jetson (`jetson_vision/`) |
+|---|---|---|
+| 相机 | OpenMV 板载 sensor | USB 摄像头 |
+| 分辨率 | QQVGA 160×120 | 640×480 |
+| 语言 | MicroPython | Python 3 + OpenCV |
+| 算法 | 逐行扫描 + cm投影 | 鸟瞰变换 |
+| QR | `find_qrcodes()` | `cv2.QRCodeDetector` |
+| 部署 | 拷 3 个文件到 U 盘 | `python vision_main.py` |

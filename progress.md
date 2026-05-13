@@ -23,8 +23,23 @@
 - **同步**：`CVpart/main/main_webots_aligned.py` ↔ `OpenMV_flash/main.py` 保持对齐
 - **QR 测试工具**：新建 `CVpart/main/qr_test_hardened.py`，独立测试脚本，管线与主程序完全一致，逐帧终端输出（检测/候选/发送/过滤符号），每秒统计摘要（命中率/发送数/拒绝数/平均延迟）
 
+## 2026-05-11 — OpenMV QR 专项测试 + Jetson Nano 视觉方案启动
+
+- **QR 测试脚本迭代**：`qr_test_hardened.py` 经历 6 次迭代：
+  - QQVGA→QVGA→VGA（OOM）→QVGA（稳定）
+  - 多策略解码（pipe/raw_lens/raw）+ 内存优化（gc.collect）
+  - 文件日志 (`qr_test_log.txt`)
+  - `stable_frames=1` 解决远距离检测断断续续无法发送的问题
+- **log2 分析**：15+ 次检测但 0 次发送，根因是 `stable_frames=3` + 帧间检测不稳定 → 已改为 1
+- **Jetson Nano 方案**：新建 `jetson_vision/` 目录，与 OpenMV 代码完全隔离
+  - `qr_detector.py`：OpenCV QRCodeDetector，raw + CLAHE 双策略
+  - `line_detector.py`：鸟瞰变换法替代 600 行逐行扫描
+  - `usb_cam_qr_test.py`：Windows USB 摄像头测试
+  - `run_qr_test.bat`：双击运行
+
 ## 未完成 / 需在代码与场地验证
 
-- [ ] 真场 QR 测试（距离 × 倾角 × 光照）验证新参数
-- [ ] 仿真：换畸变后按需跑 Webots 长评测 / `auto_tune`
+- [ ] Windows USB 摄像头 QR 距离测试
+- [ ] Jetson Nano 相机标定、巡线、串口联调
+- [ ] 真场 QR 测试（OpenMV 保底）
 - [ ] 红色障碍检测：真机是否切 RGB565？（当前灰度下关闭）

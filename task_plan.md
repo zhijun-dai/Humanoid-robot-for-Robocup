@@ -49,10 +49,22 @@
 - [ ] PDF 入场后：摘录 QR/尺寸/距离/禁止事项 → `findings.md`
 - [ ] 调整场地标定与评分相关的测试用例
 
+## 阶段 E — Jetson Nano + USB 摄像头视觉方案（进行中）
+
+- [x] 架构规划：QR (`cv2.QRCodeDetector`) + 巡线（鸟瞰变换）+ 红条（HSV）
+- [x] QR 检测模块 (`jetson_vision/qr_detector.py`)：raw + CLAHE 双策略
+- [x] 巡线模块 (`jetson_vision/line_detector.py`)：warpPerspective 替代逐行扫描
+- [x] USB 摄像头 Windows 测试脚本 (`jetson_vision/usb_cam_qr_test.py`)
+- [ ] Windows 上验证 USB 摄像头 QR 检测效果
+- [ ] 相机畸变标定 + 写入配置
+- [ ] 巡线模块实机验证
+- [ ] UART 串口联通 STM32（协议 V2）
+- [ ] Jetson Nano 实机部署测试
+
 ---
 
 ## 当前优先级建议
 
-1. 本机跑通 Webots + 短测，根目录参数与 `OpenMV_flash` 真机 JSON 对齐  
-2. 建 QR 测试台（距离 × 倾角 × 光照），记录表格  
-3. 再决定是否合并 QR 进 `OpenMV_flash/main.py`（与巡线分时）
+1. **现在**：Windows 上跑 `usb_cam_qr_test.py` 验证 QR 距离
+2. **然后**：相机标定 → 巡线 + 红条模块 → 串口联调
+3. **保底**：OpenMV 方案继续可用，QR 参数已调好
