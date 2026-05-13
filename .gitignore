@@ -67,3 +67,13 @@ Webots/controllers/line_follow_transfer/generated/
 
 # 临时从 rule.pdf 抽取的全文文本（可自行再生成）
 docs/rules/_rule_full_extract.txt
+
+# Webots 自动生成的 wbproj 文件
+Webots/worlds/.*.wbproj
+
+# Claude Code 本地设置（每个机器不同）
+.claude/settings.local.json
+
+# 杂散生成文件
+.openmv_disk
+README.txt
