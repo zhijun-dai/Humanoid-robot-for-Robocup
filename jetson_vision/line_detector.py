@@ -45,9 +45,7 @@ class LineDetector:
     def _build_birdseye_matrix(self, lookahead):
         """构建从相机视图到地面俯视图的单应矩阵。"""
         near, far = lookahead
-        tan_v = np.tan(self.cam_pitch)
-        tan_hf = np.tan(np.radians(57.0) / 2)
-
+        near = max(near, 20.0)  # 40cm高/45°俯角下地面最近可见~17cm，留余量防越界
         # 地面前方 near~far cm 对应的图像行
         def ground_y(z_cm):
             ray = np.arctan2(self.cam_height, z_cm)
