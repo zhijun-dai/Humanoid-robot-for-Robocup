@@ -51,13 +51,13 @@
 
 ## 阶段 E — Jetson Nano + USB 摄像头视觉方案（进行中）
 
-- [x] 架构规划：QR (`cv2.QRCodeDetector`) + 巡线（鸟瞰变换）+ 红条（HSV）
-- [x] QR 检测模块 (`jetson_vision/qr_detector.py`)：raw + CLAHE 双策略
-- [x] 巡线模块 (`jetson_vision/line_detector.py`)：warpPerspective 替代逐行扫描
-- [x] USB 摄像头 Windows 测试脚本 (`jetson_vision/usb_cam_qr_test.py`)
-- [ ] Windows 上验证 USB 摄像头 QR 检测效果
-- [ ] 相机畸变标定 + 写入配置
-- [ ] 巡线模块实机验证
+- [x] 架构规划：QR + 巡线（鸟瞰）+ 红条（HSV）
+- [x] QR 模块、巡线模块、USB 测试脚本
+- [x] Webots 控制器（共用 jetson_vision 模块）
+- [x] 规则 PDF 场地图数据提取验证（3660×2440mm, 6140mm, 350mm, 240mm门）
+- [x] 项目架构诊断：两份代码、过时文件、OpenMV 硬伤 → 记录到 findings.md
+- [ ] Windows 上验证 USB 摄像头 QR 检测
+- [ ] 相机畸变标定 + Webots 巡线仿真验证
 - [ ] UART 串口联通 STM32（协议 V2）
 - [ ] Jetson Nano 实机部署测试
 

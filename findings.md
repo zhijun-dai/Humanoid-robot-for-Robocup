@@ -105,3 +105,26 @@
 
 - 照片集：`calib_photos_manual_now/`；结果：`generated/camera_calibration_result_calib_photos_manual_now.json`（若 `generated/` 被 ignore，以提交记录与根 `line_follow_params` 为准）
 - 已写入根 `line_follow_params`、`config/presets`、`OpenMV_flash/line_follow_params`（数值以当前 JSON 文件为准）
+
+---
+
+## 项目架构问题诊断（2026-05-11）
+
+### 已修复
+1. **两份巡线代码不同步**：`CVpart/main/main_webots_aligned.py` (1478行) 和 `Webots/controllers/line_follow_transfer/line_follow_transfer.py` (1918行) 实现同一算法但两套代码。Jetson 方案解决：`jetson_vision/` 模块仿真和真机共用。
+2. **过时文件**：根目录 `line_follow.py` (763行孤本)、空目录 `docs/rules/`，已删除。
+3. **规划文件散落**：`docs/project/` → 根目录，已迁移。
+
+### OpenMV 硬件硬伤
+4. **QR 检测物理瓶颈**：QQVGA (160×120) 下 5cm 码 40cm 高/45°倾角，有效检测距离 ≤50cm。不可逾越的像素限制。
+5. **红条检测不可用**：OpenMV 灰度 sensor 下 `red_detect_on_grayscale` 默认关闭。规则要求跨红条。RGB565 可开但牺牲巡线帧率。
+6. **转向量化为 4 个离散值**：go/left/right/slight_left，无法输出连续控制量。
+
+### 需要确认
+7. **`config/field/场地参数基线.json` 缺少 QR 槽位坐标**：`qr_slots` 为空数组。规则：3 个 QR 分别在起跑线后 30cm、直道中间、弯道中间。需赛道几何计算后填入。
+8. **Webots Camera 高度 0.38m vs 参数 40cm**：相差 2cm，不影响功能但建议统一。
+
+### Jetson Nano 优势
+9. **16x 像素**：QQVGA 19K → 640×480=307K
+10. **连续控制**：偏差 px → 转向角度 0.1° 精度
+11. **同一代码舱**：`jetson_vision/` 模块在 Webots 和真机共用
