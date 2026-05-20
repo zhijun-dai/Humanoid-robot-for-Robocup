@@ -131,12 +131,17 @@ def main():
         cv2.putText(frame, status_line, (8, 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-        cv2.imshow("Jetson Vision Demo", frame)
+        cv2.imshow("1.Original", frame)
 
-        # 鸟瞰图窗口（显示拟合的几何原语 + 中心线 + 偏差）
+        # 中间结果窗口
+        if "bird" in dbg and dbg["bird"] is not None:
+            bird_gray = cv2.cvtColor(dbg["bird"], cv2.COLOR_GRAY2BGR)
+            cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_gray, (320, 400), interpolation=cv2.INTER_NEAREST))
+        if "binary_raw" in dbg and dbg["binary_raw"] is not None:
+            b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
+            cv2.imshow("3.Otsu (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
         if vis_bird is not None:
-            bird_disp = cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST)
-            cv2.imshow("Birdseye (Geometric)", bird_disp)
+            cv2.imshow("4.Close+Fit", cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST))
 
         key = cv2.waitKey(1) & 0xFF
         if key == 27:

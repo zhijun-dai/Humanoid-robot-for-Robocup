@@ -26,7 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_offset=6,
+        th_offset=0,
         K=None,
         dist=None,
         calib_w=None,
@@ -115,17 +115,17 @@ class LineDetector:
         # Otsu 自适应阈值
         th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         th_val = clamp(th_val + self.th_offset, 30, 200)
-        _, binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
+        _, binary_raw = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
 
         k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k5, iterations=2)
+        binary = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k5, iterations=2)
 
         # 提取黑色边缘像素坐标 (x, y)
         ys, xs = np.where(binary == 0)
         if len(xs) < 10:
-            return bird, binary, None
+            return bird, binary_raw, binary, None  # pts = None
         pts = np.column_stack((xs.astype(np.float32), ys.astype(np.float32)))
-        return bird, binary, pts
+        return bird, binary_raw, binary, pts
 
     # ── 直线模型拟合 ──
     def _fit_straight_model(self, pts, n_iter=180):
@@ -302,7 +302,7 @@ class LineDetector:
     def process(self, bgr):
         if self._K is not None:
             bgr = cv2.undistort(bgr, self._K, self._dist)
-        bird, binary, pts = self._preprocess(bgr)
+        bird, binary_raw, binary, pts = self._preprocess(bgr)
 
         # 默认值
         dev_px = None
@@ -429,6 +429,7 @@ class LineDetector:
 
         debug = {
             "bird": bird,
+            "binary_raw": binary_raw,
             "binary": binary,
             "model_type": model["model"] if model else None,
             "inlier_ratio": model["inlier_ratio"] if model else 0.0,
