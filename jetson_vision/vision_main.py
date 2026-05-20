@@ -1,64 +1,141 @@
-"""Jetson Nano 视觉主循环（Windows 可运行测试）
-巡线 + QR + 红条 → UART 到 STM32（Protocol V2）
+"""Jetson Nano 视觉 Demo — 巡线 + QR + 红条 实时可视化
+双击 run_vision_demo.bat 运行。ESC 退出。
 """
 import cv2
 import time
 import sys
 import os
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from qr_detector import QRDetector
+from line_detector import LineDetector
+
+
+# ── 可调参数 ──
+CAM_IDX = 0          # 0=内置 1=USB（不确定就试）
+CAM_W = 1280
+CAM_H = 720
+COOLDOWN_MS = 2000
 
 
 def main():
-    # ── 相机 ──
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    print(f"Opening camera [{CAM_IDX}] ({CAM_W}x{CAM_H})...")
+    cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_W)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"Actual: {actual_w}x{actual_h}")
+    if not cap.isOpened():
+        print("Failed to open camera! Try changing CAM_IDX.")
+        return
 
-    # ── QR 检测器 ──
-    qr = QRDetector(
-        stable_frames=1,
-        cooldown_ms=2000,
-        min_edge_px=20,
-        max_edge_px=400,
-        debug=True,
-    )
+    # 检测器
+    qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
+                    min_edge_px=20, max_edge_px=400, debug=False)
+    ld = LineDetector(cam_height_cm=40.0, cam_pitch_deg=45.0,
+                      cam_w=actual_w, cam_h=actual_h)
 
-    print("Jetson Vision — QR Test Mode (640x480)")
-    print("  strategies: raw + clahe")
-    print("  stable_frames=1  cooldown=2s  min_edge=20px  max_edge=400px")
+    print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
+    print("  巡线: birds-eye 三带直方图 + 偏差/朝向/曲率")
+    print("  QR:   raw + 2x upscale  红条: HSV mask")
     print("  Press ESC to quit\n")
 
-    # ── 循环 ──
     fps_t0 = time.time()
-    fps_count = 0
+    fps_n = 0
+    fps_val = 0.0
+    last_qr_action = None
+    last_qr_t = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        t_now = time.time()
 
-        # QR 检测
-        action, dbg = qr.update(frame)
+        # FPS
+        fps_n += 1
+        if fps_n % 30 == 0:
+            fps_val = 30 / max(t_now - fps_t0, 1e-3)
+            fps_t0 = t_now
 
-        # 画框
-        if dbg is not None and "w" in dbg:
-            cv2.putText(frame, f"QR {dbg['action']} {dbg['w']}x{dbg['h']}px",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+        # ── 巡线 ──
+        dev_px, heading_deg, conf, vis_bird, dbg = ld.process(frame)
+        status_line = f"FPS={fps_val:.0f}"
 
-        # FPS 计算
-        fps_count += 1
-        if fps_count % 30 == 0:
-            now = time.time()
-            dt = now - fps_t0
-            fps = 30.0 / dt if dt > 0 else 0
-            fps_t0 = now
+        if dev_px is not None and conf > 0.15:
+            # 转弯方向判定
+            curve_val = dbg.get("curve", 0.0) or 0.0
+            if abs(heading_deg) < 5 and abs(curve_val) < 10:
+                turn_text, turn_color = "STRAIGHT", (0, 255, 0)
+            elif heading_deg > 0:
+                turn_text, turn_color = "RIGHT >>>", (0, 200, 255)
+            else:
+                turn_text, turn_color = "<<< LEFT", (0, 200, 255)
 
-        cv2.putText(frame, f"FPS: {30.0:.0f}" if fps_count % 30 == 0 else " ",
-                    (540, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-        cv2.imshow("Jetson Vision", frame)
-        if cv2.waitKey(1) & 0xFF == 27:  # ESC
+            status_line += f" | dev={dev_px:+.0f}px head={heading_deg:+.0f}deg [{turn_text}] c={conf:.1f}"
+
+            # 转向指示（中央大箭头）
+            cx, cy = actual_w // 2, actual_h // 2
+            arrow_len = int(30 + abs(heading_deg) * 2.5)
+            arrow_angle = np.radians(-heading_deg - 90)  # 上=0°，右转=右箭头
+            dx = int(arrow_len * np.cos(arrow_angle))
+            dy = int(arrow_len * np.sin(arrow_angle))
+            cv2.arrowedLine(frame, (cx - dx, cy - dy), (cx + dx, cy + dy),
+                            turn_color, 3, tipLength=0.4)
+
+            # 偏离指示条（底部）
+            bar_cx = actual_w // 2
+            bar_y = actual_h - 25
+            cv2.line(frame, (bar_cx - 80, bar_y), (bar_cx + 80, bar_y), (80, 80, 80), 2)
+            cv2.circle(frame, (bar_cx, bar_y), 4, (255, 255, 255), -1)
+            dev_indicator = int(bar_cx + dev_px * 0.5)
+            dev_indicator = max(bar_cx - 80, min(bar_cx + 80, dev_indicator))
+            cv2.circle(frame, (dev_indicator, bar_y), 7, turn_color, -1)
+        else:
+            status_line += " | NO LINE"
+
+        # ── QR ──
+        action, qr_dbg = qr.update(frame)
+        if action is not None:
+            last_qr_action = action
+            last_qr_t = t_now
+            cv2.putText(frame, f"QR={action}!", (actual_w - 150, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 3)
+        elif last_qr_action is not None and t_now - last_qr_t < 2.0:
+            cv2.putText(frame, f"QR={last_qr_action}", (actual_w - 150, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 180, 180), 2)
+
+        # ── 红条 ──
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask_red = cv2.inRange(hsv, (0, 80, 80), (10, 255, 255)) | \
+                   cv2.inRange(hsv, (160, 80, 80), (180, 255, 255))
+        red_r = cv2.countNonZero(mask_red) / (actual_w * actual_h)
+        if red_r > 0.05:
+            status_line += f" | RED={red_r:.2f}"
+            # 红条区域轮廓
+            contours, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cv2.contourArea(cnt) > 500:
+                    x, y, w, h = cv2.boundingRect(cnt)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+
+        # ── 状态栏 ──
+        cv2.rectangle(frame, (0, 0), (actual_w, 28), (30, 30, 30), -1)
+        cv2.putText(frame, status_line, (8, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+        cv2.imshow("Jetson Vision Demo", frame)
+
+        # 鸟瞰图窗口（翻转以匹配摄像头上下方向：近处=上，远处=下）
+        if vis_bird is not None:
+            bird_disp = cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST)
+            bird_disp = cv2.flip(bird_disp, 0)
+            cv2.imshow("Line - Birdseye", bird_disp)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:
             break
 
     cap.release()
