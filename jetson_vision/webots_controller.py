@@ -127,7 +127,7 @@ while robot.step(TIMESTEP) != -1:
     bgr = webots_bgra_to_bgr(raw, img_w, img_h)
 
     # ── 巡线 ──
-    deviation_px, conf, vis, dbg = line.process(bgr)
+    deviation_px, heading_deg, conf, vis, dbg = line.process(bgr)
 
     steer = 0.0
     if deviation_px is not None and conf > 0.15:
