@@ -26,7 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_offset=4,
+        th_offset=6,
         K=None,
         dist=None,
         calib_w=None,
@@ -112,13 +112,9 @@ class LineDetector:
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
 
-        # CLAHE 增强远处对比度（暗区更暗，亮区更亮）
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        bird = clahe.apply(bird)
-
-        # Otsu 自适应阈值 + 微调
+        # Otsu 自适应阈值
         th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        th_val = clamp(th_val + self.th_offset, 20, 230)
+        th_val = clamp(th_val + self.th_offset, 30, 200)
         _, binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
 
         k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
