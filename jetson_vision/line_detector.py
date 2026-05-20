@@ -109,13 +109,14 @@ class LineDetector:
 
     # ── 预处理 ──
     def _preprocess(self, bgr):
-        # 对 BGR 三通道分别 warp，保持颜色信息
-        bird = cv2.warpPerspective(bgr, self.M, (self.bird_w, self.bird_h))
+        # max(R,G,B) → 红色保持255不被压暗，黑线三通道都低→0
+        gray = np.max(bgr, axis=2)
+        bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
 
-        # 逐通道阈值：B、G、R 都低于 th 才是黑色
-        th_val = clamp(60 + self.th_offset, 30, 180)
-        black_mask = np.all(bird < th_val, axis=2)
-        binary_raw = np.where(black_mask, 0, 255).astype(np.uint8)
+        # Otsu 自适应阈值
+        th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        th_val = clamp(th_val + self.th_offset, 30, 200)
+        _, binary_raw = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
 
         k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         binary = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k5, iterations=2)
