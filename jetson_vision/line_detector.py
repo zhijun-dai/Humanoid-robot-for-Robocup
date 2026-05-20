@@ -26,7 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_min=80,
+        th_offset=4,
         K=None,
         dist=None,
         calib_w=None,
@@ -39,7 +39,7 @@ class LineDetector:
         self.img_h = cam_h
         self.bird_h = bird_h
         self.bird_w = bird_w
-        self.th_min = th_min  # 固定二值化阈值（<th_min → 黑）
+        self.th_offset = th_offset  # Otsu 偏移（正值→更多黑）
 
         # 畸变校正（可选，真机用，仿真不传）
         self._K = None
@@ -112,8 +112,14 @@ class LineDetector:
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
 
-        # 固定阈值：只有真正暗的像素（赛道黑线）才判为黑
-        _, binary = cv2.threshold(bird, self.th_min, 255, cv2.THRESH_BINARY)
+        # CLAHE 增强远处对比度（暗区更暗，亮区更亮）
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        bird = clahe.apply(bird)
+
+        # Otsu 自适应阈值 + 微调
+        th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        th_val = clamp(th_val + self.th_offset, 20, 230)
+        _, binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
 
         k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k5, iterations=2)
