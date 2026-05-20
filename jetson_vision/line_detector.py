@@ -26,7 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_offset=4,
+        th_offset=12,
         th_min=30,
         th_max=160,
         K=None,
