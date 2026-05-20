@@ -29,6 +29,10 @@ class LineDetector:
         th_offset=4,
         th_min=30,
         th_max=160,
+        K=None,
+        dist=None,
+        calib_w=None,
+        calib_h=None,
     ):
         self.cam_height = cam_height_cm
         self.cam_pitch = np.radians(cam_pitch_deg)
@@ -40,6 +44,20 @@ class LineDetector:
         self.th_offset = th_offset
         self.th_min = th_min
         self.th_max = th_max
+
+        # 畸变校正（可选，真机用，仿真不传）
+        self._K = None
+        self._dist = None
+        if K is not None and dist is not None:
+            cal_w = calib_w or cam_w
+            cal_h = calib_h or cam_h
+            sx = cam_w / cal_w
+            sy = cam_h / cal_h
+            K_scaled = np.array(K, dtype=np.float32).reshape(3, 3).copy()
+            K_scaled[0] *= sx
+            K_scaled[1] *= sy
+            self._K = K_scaled
+            self._dist = np.array(dist, dtype=np.float32)
 
         self.M = self._build_birdseye_matrix(lookahead_cm)
         self._center_x = bird_w // 2
@@ -285,6 +303,8 @@ class LineDetector:
 
     # ── 主处理入口 ──
     def process(self, bgr):
+        if self._K is not None:
+            bgr = cv2.undistort(bgr, self._K, self._dist)
         bird, binary, pts = self._preprocess(bgr)
 
         # 默认值
