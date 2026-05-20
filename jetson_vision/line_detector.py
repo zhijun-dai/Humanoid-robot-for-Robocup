@@ -26,7 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_offset=0,
+        th_offset=-4,
         K=None,
         dist=None,
         calib_w=None,
@@ -109,7 +109,8 @@ class LineDetector:
 
     # ── 预处理 ──
     def _preprocess(self, bgr):
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        # 用三通道最大值代替标准灰度——红色不会被压暗误判为黑
+        gray = np.max(bgr, axis=2)
         bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
 
         # Otsu 自适应阈值
