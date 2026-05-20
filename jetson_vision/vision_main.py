@@ -35,10 +35,10 @@ def main():
     qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
                     min_edge_px=20, max_edge_px=400, debug=False)
     ld = LineDetector(cam_height_cm=40.0, cam_pitch_deg=45.0,
-                      cam_w=actual_w, cam_h=actual_h)
+                      cam_w=actual_w, cam_h=actual_h, track_width_cm=35.0)
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
-    print("  巡线: birds-eye 三带直方图 + 偏差/朝向/曲率")
+    print("  巡线: 几何原语拟合 (平行线 / 同心圆)")
     print("  QR:   raw + 2x upscale  红条: HSV mask")
     print("  Press ESC to quit\n")
 
@@ -66,15 +66,15 @@ def main():
 
         if dev_px is not None and conf > 0.15:
             # 转弯方向判定
-            curve_val = dbg.get("curve", 0.0) or 0.0
-            if abs(heading_deg) < 5 and abs(curve_val) < 10:
+            mtype = dbg.get("model_type", "?") or "?"
+            if abs(heading_deg) < 4:
                 turn_text, turn_color = "STRAIGHT", (0, 255, 0)
             elif heading_deg > 0:
                 turn_text, turn_color = "RIGHT >>>", (0, 200, 255)
             else:
                 turn_text, turn_color = "<<< LEFT", (0, 200, 255)
 
-            status_line += f" | dev={dev_px:+.0f}px head={heading_deg:+.0f}deg [{turn_text}] c={conf:.1f}"
+            status_line += f" | [{mtype}] dev={dev_px:+.0f}px head={heading_deg:+.0f}deg [{turn_text}] c={conf:.2f}"
 
             # 转向指示（中央大箭头）
             cx, cy = actual_w // 2, actual_h // 2
@@ -128,11 +128,10 @@ def main():
 
         cv2.imshow("Jetson Vision Demo", frame)
 
-        # 鸟瞰图窗口（翻转以匹配摄像头上下方向：近处=上，远处=下）
+        # 鸟瞰图窗口（显示拟合的几何原语 + 中心线 + 偏差）
         if vis_bird is not None:
             bird_disp = cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST)
-            bird_disp = cv2.flip(bird_disp, 0)
-            cv2.imshow("Line - Birdseye", bird_disp)
+            cv2.imshow("Birdseye (Geometric)", bird_disp)
 
         key = cv2.waitKey(1) & 0xFF
         if key == 27:

@@ -94,7 +94,8 @@ right.setVelocity(0.0)
 
 # ── jetson_vision 检测器 ──
 qr = QRDetector(stable_frames=1, cooldown_ms=2000, min_edge_px=20, max_edge_px=300, debug=True)
-ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH, cam_w=W, cam_h=H)
+ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH, cam_w=W, cam_h=H,
+                  track_width_cm=TRACK_W_CM)
 
 # ── PID 状态 ──
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
@@ -114,8 +115,8 @@ def _log(msg):
         _log_fh.write(msg + "\n")
         _log_fh.flush()
 
-_log(f"V3 [jetson_bridge] camera={W}x{H} pitch={CAM_PITCH}deg height={CAM_HEIGHT}cm")
-_log(f"  PID kp={KP} ki={KI} kd={KD}  line_det: RANSAC warp 160x200")
+_log(f"V4 [jetson_bridge] camera={W}x{H} pitch={CAM_PITCH}deg height={CAM_HEIGHT}cm")
+_log(f"  PID kp={KP} ki={KI} kd={KD}  line_det: geometric warp 160x200  W={TRACK_W_CM}cm")
 
 while robot.step(TIMESTEP) != -1:
     if _start_t is None:

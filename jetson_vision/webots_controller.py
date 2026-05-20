@@ -100,6 +100,7 @@ qr = QRDetector(stable_frames=1, cooldown_ms=2000, min_edge_px=20, max_edge_px=3
 line = LineDetector(
     cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH,
     cam_w=img_w, cam_h=img_h, track_width_cm=TRACK_WIDTH,
+    # inner_radius_cm / outer_radius_cm 留待用户测量后填入
 )
 
 # ── PID 状态 ──
