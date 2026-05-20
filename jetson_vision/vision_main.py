@@ -35,7 +35,8 @@ def main():
     qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
                     min_edge_px=20, max_edge_px=400, debug=False)
     ld = LineDetector(cam_height_cm=40.0, cam_pitch_deg=45.0,
-                      cam_w=actual_w, cam_h=actual_h, track_width_cm=35.0)
+                      cam_w=actual_w, cam_h=actual_h,
+                      track_width_cm=35.5, inner_radius_cm=59.75, outer_radius_cm=95.25)
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
     print("  巡线: 几何原语拟合 (平行线 / 同心圆)")

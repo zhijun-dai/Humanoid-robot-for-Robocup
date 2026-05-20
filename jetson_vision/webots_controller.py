@@ -69,7 +69,7 @@ CFG = _load_cfg()
 # ── 参数 ──
 CAM_PITCH = float(_cfg_get(CFG, "camera.pitch_deg", 45.0))
 CAM_HEIGHT = float(_cfg_get(CFG, "camera.height_cm", 40.0))
-TRACK_WIDTH = float(_cfg_get(CFG, "roi.min_track_width", 35))  # actually track width in cm
+TRACK_WIDTH = float(_cfg_get(CFG, "roi.min_track_width", 35.5))  # actually track width in cm
 BASE_SPEED = float(_cfg_get(CFG, "webots.base_speed", 3.2))
 STEER_TO_WHEEL = float(_cfg_get(CFG, "webots.steer_to_wheel", 0.04))
 MAX_SPEED = float(_cfg_get(CFG, "webots.max_speed", 6.28))
@@ -100,7 +100,7 @@ qr = QRDetector(stable_frames=1, cooldown_ms=2000, min_edge_px=20, max_edge_px=3
 line = LineDetector(
     cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH,
     cam_w=img_w, cam_h=img_h, track_width_cm=TRACK_WIDTH,
-    # inner_radius_cm / outer_radius_cm 留待用户测量后填入
+    inner_radius_cm=59.75, outer_radius_cm=95.25,
 )
 
 # ── PID 状态 ──

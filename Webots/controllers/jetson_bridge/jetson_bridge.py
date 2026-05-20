@@ -45,7 +45,7 @@ CFG = _load_cfg()
 
 CAM_PITCH = float(_cfg_get(CFG, "camera.pitch_deg", 45.0))
 CAM_HEIGHT = float(_cfg_get(CFG, "camera.height_cm", 40.0))
-TRACK_W_CM = 35.0  # 赛道宽 350mm
+TRACK_W_CM = 35.5  # 黑线宽3.5cm + 内距32cm → 中线距35.5cm
 
 # PID（参数与旧算法对齐，deviation_px 归一化到 [-1,1] 后输入 PID）
 # 参数：环境变量覆盖 > JSON 配置 > 默认值
@@ -95,7 +95,8 @@ right.setVelocity(0.0)
 # ── jetson_vision 检测器 ──
 qr = QRDetector(stable_frames=1, cooldown_ms=2000, min_edge_px=20, max_edge_px=300, debug=True)
 ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH, cam_w=W, cam_h=H,
-                  track_width_cm=TRACK_W_CM)
+                  track_width_cm=TRACK_W_CM,
+                  inner_radius_cm=59.75, outer_radius_cm=95.25)
 
 # ── PID 状态 ──
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
