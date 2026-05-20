@@ -26,9 +26,7 @@ class LineDetector:
         track_width_cm=35.5,
         inner_radius_cm=59.75,
         outer_radius_cm=95.25,
-        th_offset=-8,
-        th_min=30,
-        th_max=160,
+        th_min=80,
         K=None,
         dist=None,
         calib_w=None,
@@ -41,9 +39,7 @@ class LineDetector:
         self.img_h = cam_h
         self.bird_h = bird_h
         self.bird_w = bird_w
-        self.th_offset = th_offset
-        self.th_min = th_min
-        self.th_max = th_max
+        self.th_min = th_min  # 固定二值化阈值（<th_min → 黑）
 
         # 畸变校正（可选，真机用，仿真不传）
         self._K = None
@@ -98,8 +94,8 @@ class LineDetector:
             [self.img_w - 1, y_far],  [0, y_far],
         ])
         dst = np.float32([
-            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],
-            [self.bird_w - 1, 0],               [0, 0],
+            [self.bird_w - 1, 0],               [0, 0],                # near → top
+            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],  # far → bottom
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
@@ -116,12 +112,11 @@ class LineDetector:
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
 
-        th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        th_val = clamp(th_val + self.th_offset, self.th_min, self.th_max)
-        _, binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
+        # 固定阈值：只有真正暗的像素（赛道黑线）才判为黑
+        _, binary = cv2.threshold(bird, self.th_min, 255, cv2.THRESH_BINARY)
 
-        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k3)
+        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k5, iterations=2)
 
         # 提取黑色边缘像素坐标 (x, y)
         ys, xs = np.where(binary == 0)
@@ -274,7 +269,7 @@ class LineDetector:
         heading_deg: 中线方向与 robot forward (鸟瞰图上=↑) 的夹角
         """
         robot_x = self._center_x
-        robot_y = self.bird_h - 1  # 图底 = 机器人近处
+        robot_y = 0  # 图顶 = 机器人近处（地图方向：前方=↓）
 
         if model["model"] == "straight":
             a, b, c = model["a"], model["b"], model["c"]
@@ -287,17 +282,17 @@ class LineDetector:
             dist = np.sqrt((robot_x - cx) ** 2 + (robot_y - cy) ** 2)
             deviation_px = dist - r_center
             # 切线方向：圆心→机器人 逆时针转90°（半圆向左转）
+            # 地图方向：前方=↓，切线应指向下方
             vx = robot_x - cx
             vy = robot_y - cy
             if abs(vx) + abs(vy) < 1e-6:
                 heading_deg = 0.0
             else:
-                tx = -vy
+                tx = -vy  # CCW tangent
                 ty = vx
-                # 确保大致指向上方（-y 方向）
-                if ty > 0:
+                if ty < 0:  # 指向上方 → 翻转
                     tx, ty = -tx, -ty
-                heading_deg = np.degrees(np.arctan2(tx, -ty))
+                heading_deg = np.degrees(np.arctan2(-tx, ty))
 
         return deviation_px, heading_deg
 
@@ -399,9 +394,9 @@ class LineDetector:
                 if 0 <= int(cx) < self.bird_w and 0 <= int(cy) < self.bird_h:
                     cv2.circle(vis, (int(cx), int(cy)), 4, (0, 0, 255), -1)
 
-            # 偏差和朝向指示
+            # 偏差和朝向指示（机器人位于图顶，前方=↓）
             robot_x = self._center_x
-            robot_y = self.bird_h - 1
+            robot_y = 0
             cv2.circle(vis, (robot_x, robot_y), 5, (255, 255, 255), -1)
             if dev_px is not None:
                 lbl_x = clamp(int(robot_x - dev_px * 0.8), 5, self.bird_w - 5)
@@ -412,7 +407,7 @@ class LineDetector:
             arrow_len = 22
             h_rad = np.radians(heading_deg)
             dx = int(arrow_len * np.sin(h_rad))
-            dy = -int(arrow_len * np.cos(h_rad))
+            dy = int(arrow_len * np.cos(h_rad))
             cv2.arrowedLine(vis, (robot_x, robot_y),
                             (robot_x + dx, robot_y + dy),
                             (255, 255, 0), 2, tipLength=0.5)
