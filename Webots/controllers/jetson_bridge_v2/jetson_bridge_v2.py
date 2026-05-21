@@ -122,10 +122,10 @@ while robot.step(TIMESTEP) != -1:
     t = robot.getTime()
     if not hasattr(ld, '_dbg_snap_cnt'): ld._dbg_snap_cnt = 0
     if t > 2.0 and ld._dbg_snap_cnt < 3:
-        path = os.path.join(_CTRL_DIR, "..", "..", "..", "generated",
-                            f"v2_dbg_{ld._dbg_snap_cnt}.png")
+        path = f"D:/tmp/v2_dbg_{ld._dbg_snap_cnt}.png"
+        os.makedirs("D:/tmp", exist_ok=True)
         cv2.imwrite(path, vis)
-        _log(f"  [debug] saved {path}")
+        _log(f"  [debug] saved frame {ld._dbg_snap_cnt}")
         ld._dbg_snap_cnt += 1
 
     steer = 0.0

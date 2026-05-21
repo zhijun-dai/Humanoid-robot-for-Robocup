@@ -84,8 +84,6 @@ class LineDetector:
         th_val, _ = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         th_val = clamp(th_val + self.th_offset, 30, 200)
         binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)[1]
-        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k5, iterations=2)
 
         # ── 逐行采样 ──
         points = []
