@@ -39,8 +39,10 @@ def _load_cfg():
     return {}
 
 CFG = _load_cfg()
-CAM_PITCH = float(_cfg_get(CFG, "camera.pitch_deg", 45.0))
-CAM_HEIGHT = float(_cfg_get(CFG, "camera.height_cm", 40.0))
+# ─── Webots 相机参数对齐（world 文件: Pose 0.38m, pitch 45°, FOV 0.9793rad）───
+CAM_PITCH = 45.0  # rotation 0 1 0 0.785398 ≈ 45°
+CAM_HEIGHT = 38.0  # Pose translation z=0.38 → 38cm
+CAM_VFOV = 43.6    # HFOV=56.13° → VFOV=2·atan(tan(28.07°)×240/320)≈43.6°
 TRACK_W_CM = 35.5
 
 def _env_or_cfg(cfg, key, default):
@@ -70,11 +72,9 @@ camera = robot.getDevice("camera_ext")
 camera.enable(TIMESTEP)
 W, H = camera.getWidth(), camera.getHeight()
 
-CAM_SHAKE_PITCH = 0.025
-CAM_SHAKE_YAW = 0.015
-CAM_BASE_PITCH = 0.7853981633974483
-cam_node = robot.getFromDef("CAM_POSE")
-cam_field = cam_node.getField("rotation") if cam_node else None
+# 相机抖动暂关闭
+# CAM_SHAKE_PITCH = 0.025
+# CAM_SHAKE_YAW = 0.015
 
 left = robot.getDevice("left wheel motor")
 right = robot.getDevice("right wheel motor")
@@ -84,7 +84,7 @@ left.setVelocity(0.0)
 right.setVelocity(0.0)
 
 ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH,
-                  cam_w=W, cam_h=H, th_offset=6)
+                  cam_vfov_deg=CAM_VFOV, cam_w=W, cam_h=H, th_offset=6)
 
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
        "lost_frames": 0, "smoothed_err": 0.0}
@@ -108,10 +108,6 @@ _log(f"  PID kp={KP} ki={KI} kd={KD}  parabola fit")
 while robot.step(TIMESTEP) != -1:
     if _start_t is None:
         _start_t = robot.getTime()
-
-    if cam_field is not None:
-        pitch_jitter = random.uniform(-CAM_SHAKE_PITCH, CAM_SHAKE_PITCH)
-        cam_field.setSFRotation([0, 1, 0, CAM_BASE_PITCH + pitch_jitter])
 
     raw = camera.getImage()
     if raw is None:
