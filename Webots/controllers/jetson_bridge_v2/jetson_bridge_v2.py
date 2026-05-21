@@ -41,7 +41,7 @@ def _load_cfg():
 CFG = _load_cfg()
 # ─── Webots 相机参数对齐（world 文件: Pose 0.38m, pitch 45°, FOV 0.9793rad）───
 CAM_PITCH = 45.0  # rotation 0 1 0 0.785398 ≈ 45°
-CAM_HEIGHT = 38.0  # Pose translation z=0.38 → 38cm
+CAM_HEIGHT = 40.0  # 相机距地面高度
 CAM_VFOV = 43.6    # HFOV=56.13° → VFOV=2·atan(tan(28.07°)×240/320)≈43.6°
 TRACK_W_CM = 35.5
 
