@@ -98,6 +98,7 @@ class LineDetector:
         conf = 0.0
         inlier_count = 0
         a = b = c = 0.0
+        y_mean = 0.5
 
         if len(points) >= 8:
             pts = np.array(points, dtype=np.float32)
