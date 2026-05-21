@@ -128,11 +128,12 @@ while robot.step(TIMESTEP) != -1:
         dt = TIMESTEP / 1000.0
 
         near_norm = dev_px / 80.0
-        heading_norm = heading_deg / 45.0
         fused_err = -near_norm
-        fused_err += 0.06 * (-heading_norm)
+        # 朝向只给一点点前馈（抛物线朝向噪声较大）
+        if abs(heading_deg) < 15:
+            fused_err += 0.015 * (-heading_deg / 45.0)
 
-        SMOOTH_ALPHA = 0.65 if conf > 0.4 else 0.85
+        SMOOTH_ALPHA = 0.75 if conf > 0.4 else 0.88
         pid["smoothed_err"] = SMOOTH_ALPHA * pid["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
 
         if abs(pid["last_steer"]) < STEER_SAT * 0.8:
