@@ -85,6 +85,8 @@ class LineDetector:
         def ground_y(z_cm):
             ray = np.arctan2(self.cam_height, z_cm)
             v = ray - self.cam_pitch
+            # 旧代码公式: y = (0.5 - v/vfov) * img_h
+            # 相机低头45°, 画面顶部=更朝下=近处, 底部=近水平=远处
             return (0.5 - v / vfov_rad) * self.img_h
 
         y_far = ground_y(far)
