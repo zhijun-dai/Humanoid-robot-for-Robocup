@@ -96,8 +96,8 @@ class LineDetector:
             [self.img_w - 1, y_far],  [0, y_far],
         ])
         dst = np.float32([
-            [self.bird_w - 1, 0],               [0, 0],                # near → top
-            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],  # far → bottom
+            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],  # near → bottom
+            [self.bird_w - 1, 0],               [0, 0],                # far → top
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
@@ -276,7 +276,7 @@ class LineDetector:
         heading_deg: 中线方向与 robot forward (鸟瞰图上=↑) 的夹角
         """
         robot_x = self._center_x
-        robot_y = 0  # 图顶 = 机器人近处（地图方向：前方=↓）
+        robot_y = self.bird_h - 1  # 图底 = 机器人位置，前方=↑
 
         if model["model"] == "straight":
             a, b, c = model["a"], model["b"], model["c"]
@@ -288,8 +288,6 @@ class LineDetector:
             cx, cy, r_center = model["cx"], model["cy"], model["r_center"]
             dist = np.sqrt((robot_x - cx) ** 2 + (robot_y - cy) ** 2)
             deviation_px = dist - r_center
-            # 切线方向：圆心→机器人 逆时针转90°（半圆向左转）
-            # 地图方向：前方=↓，切线应指向下方
             vx = robot_x - cx
             vy = robot_y - cy
             if abs(vx) + abs(vy) < 1e-6:
@@ -297,9 +295,9 @@ class LineDetector:
             else:
                 tx = -vy  # CCW tangent
                 ty = vx
-                if ty < 0:  # 指向上方 → 翻转
+                if ty > 0:  # 指向下方 → 翻转为向上
                     tx, ty = -tx, -ty
-                heading_deg = np.degrees(np.arctan2(-tx, ty))
+                heading_deg = np.degrees(np.arctan2(tx, -ty))
 
         return deviation_px, heading_deg
 
@@ -401,9 +399,9 @@ class LineDetector:
                 if 0 <= int(cx) < self.bird_w and 0 <= int(cy) < self.bird_h:
                     cv2.circle(vis, (int(cx), int(cy)), 4, (0, 0, 255), -1)
 
-            # 偏差和朝向指示（机器人位于图顶，前方=↓）
+            # 偏差和朝向指示（机器人位于图底，前方=↑）
             robot_x = self._center_x
-            robot_y = 0
+            robot_y = self.bird_h - 1
             cv2.circle(vis, (robot_x, robot_y), 5, (255, 255, 255), -1)
             if dev_px is not None:
                 lbl_x = clamp(int(robot_x - dev_px * 0.8), 5, self.bird_w - 5)
@@ -414,7 +412,7 @@ class LineDetector:
             arrow_len = 22
             h_rad = np.radians(heading_deg)
             dx = int(arrow_len * np.sin(h_rad))
-            dy = int(arrow_len * np.cos(h_rad))
+            dy = -int(arrow_len * np.cos(h_rad))
             cv2.arrowedLine(vis, (robot_x, robot_y),
                             (robot_x + dx, robot_y + dy),
                             (255, 255, 0), 2, tipLength=0.5)

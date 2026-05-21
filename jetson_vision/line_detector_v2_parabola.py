@@ -69,8 +69,8 @@ class LineDetector:
             [self.img_w - 1, y_far],  [0, y_far],
         ])
         dst = np.float32([
-            [self.bird_w - 1, 0],               [0, 0],
             [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],
+            [self.bird_w - 1, 0],               [0, 0],
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
