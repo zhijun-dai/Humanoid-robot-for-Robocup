@@ -5,7 +5,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 WORLD = os.path.join(REPO, "Webots", "worlds", "Robocup.wbt")
 WEBOTS = r"D:\Webots\msys64\mingw64\bin\webots.exe"
 LOG = os.path.join(REPO, "generated", "jetson_bridge_v2_log.txt")
-RUN_SEC = 20
+RUN_SEC = 30
 
 PARAM_GRID = [
     (0.3, 0.008, 0.08, 1.2),
@@ -60,7 +60,7 @@ def score(log_lines):
         if m: conf_vals.append(float(m.group(1)))
 
     if not dev_vals:
-        return -999, {}
+        return -999, {"frames": 0, "avg_dev": 999, "avg_steer": 999, "avg_conf": 0, "sat_rate": 1.0}
 
     n = len(dev_vals)
     avg_dev = sum(dev_vals) / n
