@@ -118,6 +118,16 @@ while robot.step(TIMESTEP) != -1:
 
     dev_px, heading_deg, conf, vis, dbg = ld.process(bgr)
 
+    # 前 3 帧保存鸟瞰图调试
+    t = robot.getTime()
+    if not hasattr(ld, '_dbg_snap_cnt'): ld._dbg_snap_cnt = 0
+    if t > 2.0 and ld._dbg_snap_cnt < 3:
+        path = os.path.join(_CTRL_DIR, "..", "..", "..", "generated",
+                            f"v2_dbg_{ld._dbg_snap_cnt}.png")
+        cv2.imwrite(path, vis)
+        _log(f"  [debug] saved {path}")
+        ld._dbg_snap_cnt += 1
+
     steer = 0.0
     fused_err = 0.0
     LOST_HOLD = 6
