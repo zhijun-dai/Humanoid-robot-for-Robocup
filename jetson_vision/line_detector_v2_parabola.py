@@ -130,7 +130,7 @@ class LineDetector:
                 deviation_px = near_x - self._center_x
 
                 slope = 2 * a * y_bottom + b
-                heading_deg = np.degrees(np.arctan2(b, a))
+                heading_deg = np.degrees(np.arctan(slope / self.bird_h))
 
         # ── 时序平滑 ──
         if deviation_px is not None:
