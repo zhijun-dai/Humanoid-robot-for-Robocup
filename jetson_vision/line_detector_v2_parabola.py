@@ -45,9 +45,13 @@ class LineDetector:
 
         self.M = self._build_birdseye_matrix(lookahead_cm)
 
-        # 时序状态
+        # 时序状态（参数级记忆）
         self._last_dev = None
         self._last_heading = 0.0
+        self._last_a = 0.0
+        self._last_b = 0.0
+        self._last_c = 0.0
+        self._last_y_mean = 0.5
         self._jump_cnt = 0
 
     # ── 鸟瞰变换 ──
@@ -133,8 +137,19 @@ class LineDetector:
             if inlier_count >= 6:
                 rmse = np.sqrt(np.mean(residuals[inlier_mask]**2))
                 if rmse > 3.0 or abs(a) > 0.5 * self.bird_w:
-                    # 降级到直线
                     a, b, c = 0.0, b, c
+
+                # ── 参数级时序平滑（记忆功能）──
+                param_jump = abs(a - self._last_a) + abs(b - self._last_b)
+                if param_jump < 0.3:
+                    alpha_param = 0.55 if conf > 0.5 else 0.7
+                    a = alpha_param * self._last_a + (1 - alpha_param) * a
+                    b = alpha_param * self._last_b + (1 - alpha_param) * b
+                    c = alpha_param * self._last_c + (1 - alpha_param) * c
+                    y_mean = alpha_param * self._last_y_mean + (1 - alpha_param) * y_mean
+
+                self._last_a, self._last_b, self._last_c = a, b, c
+                self._last_y_mean = y_mean
 
                 y_bottom = 1.0 - y_mean
                 near_x = a * y_bottom**2 + b * y_bottom + c
