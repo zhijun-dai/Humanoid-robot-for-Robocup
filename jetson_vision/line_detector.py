@@ -221,6 +221,8 @@ class LineDetector:
                     else:
                         a /= nr
                         b /= nr
+                    if a < 0:
+                        a, b = -a, -b
                     c = (c_l + c_r) * 0.5
 
                     # 内点比例
@@ -253,6 +255,9 @@ class LineDetector:
             norm_val = np.sqrt(a * a + b * b)
             a /= norm_val
             b /= norm_val
+            # 确保法向量指向右方 (a > 0)，否则 heading=atan2(b,a) 给出错误符号
+            if a < 0:
+                a, b = -a, -b
             c = -(a * p1[0] + b * p1[1])
 
             best_local = 0
