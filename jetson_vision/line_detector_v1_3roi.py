@@ -214,6 +214,10 @@ class LineDetector:
 
         # ── 时序平滑 ──
         if deviation_px is not None:
+            # 拒绝 heading 突变：翻转超 15° 则用上一帧值
+            heading_jump = abs(heading_deg - self._prev_heading)
+            if heading_jump > 15:
+                heading_deg = self._prev_heading
             alpha = 0.6
             deviation_px = alpha * deviation_px + (1 - alpha) * self._prev_dev
             heading_deg = alpha * heading_deg + (1 - alpha) * self._prev_heading
