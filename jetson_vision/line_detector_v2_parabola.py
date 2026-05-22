@@ -54,23 +54,34 @@ class LineDetector:
     def _build_birdseye_matrix(self, lookahead):
         near, far = lookahead
         near = max(near, 20.0)
-        vfov_rad = np.radians(self.cam_vfov_deg)
 
-        def ground_y(z_cm):
-            ray = np.arctan2(self.cam_height, z_cm)
-            v = ray - self.cam_pitch
-            # 相机低头45°, 画面顶部=更朝下=近处, 底部=近水平=远处
-            return (0.5 - v / vfov_rad) * self.img_h
+        hfov_rad = 2.0 * np.arctan(np.tan(np.radians(self.cam_vfov_deg) / 2.0)
+                                   * self.img_w / self.img_h)
+        fx = self.img_w / (2.0 * np.tan(hfov_rad / 2.0))
+        fy = self.img_h / (2.0 * np.tan(np.radians(self.cam_vfov_deg) / 2.0))
+        cx, cy = self.img_w / 2.0, self.img_h / 2.0
+        hfov_half = hfov_rad / 2.0
 
-        y_near = ground_y(near)
-        y_far = ground_y(far)
-        src = np.float32([
-            [self.img_w - 1, y_near], [0, y_near],
-            [self.img_w - 1, y_far],  [0, y_far],
+        ground_w_near = 2.0 * near * np.tan(hfov_half) * np.sqrt(1.0 + (self.cam_height / near) ** 2)
+        W = ground_w_near * 0.85
+
+        world_pts = np.float32([
+            [W / 2, near], [-W / 2, near],
+            [-W / 2, far], [W / 2, far],
         ])
+        cp, sp = np.cos(self.cam_pitch), np.sin(self.cam_pitch)
+        src_pts = []
+        for wx, wz in world_pts:
+            Xc = wx
+            Yc = -self.cam_height * cp + wz * sp
+            Zc = self.cam_height * sp + wz * cp
+            if Zc < 0.01: Zc = 0.01
+            src_pts.append([fx * Xc / Zc + cx, fy * Yc / Zc + cy])
+        src = np.float32(src_pts)
+
         dst = np.float32([
             [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],
-            [self.bird_w - 1, 0],               [0, 0],
+            [0, 0], [self.bird_w - 1, 0],
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
