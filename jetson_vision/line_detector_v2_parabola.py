@@ -55,14 +55,14 @@ class LineDetector:
         near, far = lookahead
         near = max(near, 20.0)
 
-        hfov_rad = 2.0 * np.arctan(np.tan(np.radians(self.cam_vfov_deg) / 2.0)
-                                   * self.img_w / self.img_h)
+        vfov_rad = np.radians(self.cam_vfov_deg)
+        hfov_rad = 2.0 * np.arctan(np.tan(vfov_rad / 2.0) * self.img_w / self.img_h)
         fx = self.img_w / (2.0 * np.tan(hfov_rad / 2.0))
-        fy = self.img_h / (2.0 * np.tan(np.radians(self.cam_vfov_deg) / 2.0))
+        fy = self.img_h / (2.0 * np.tan(vfov_rad / 2.0))
         cx, cy = self.img_w / 2.0, self.img_h / 2.0
-        hfov_half = hfov_rad / 2.0
 
-        ground_w_near = 2.0 * near * np.tan(hfov_half) * np.sqrt(1.0 + (self.cam_height / near) ** 2)
+        # ── 地面矩形四角: 在地平面上，hFOV 对应的水平宽度 = 2*z*tan(hfov/2) ──
+        ground_w_near = 2.0 * near * np.tan(hfov_rad / 2.0)
         W = ground_w_near * 0.85
 
         world_pts = np.float32([
@@ -73,7 +73,7 @@ class LineDetector:
         src_pts = []
         for wx, wz in world_pts:
             Xc = wx
-            Yc = -self.cam_height * cp + wz * sp
+            Yc = self.cam_height * cp - wz * sp
             Zc = self.cam_height * sp + wz * cp
             if Zc < 0.01: Zc = 0.01
             src_pts.append([fx * Xc / Zc + cx, fy * Yc / Zc + cy])
