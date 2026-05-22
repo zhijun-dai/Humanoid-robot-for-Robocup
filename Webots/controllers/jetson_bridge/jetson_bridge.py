@@ -233,3 +233,4 @@ while robot.step(TIMESTEP) != -1:
 
 if _log_fh:
     _log_fh.close()
+os._exit(0)
