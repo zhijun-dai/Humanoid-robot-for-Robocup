@@ -61,7 +61,7 @@ E-puck {
   name "e-puck_main"
   translation 0.30 -0.78 0.02
   rotation 0 0 1 0
-  controller "jetson_bridge_v2"
+  controller "jetson_bridge_v1"
   supervisor TRUE
   turretSlot [
     DEF CAM_POSE Pose {
