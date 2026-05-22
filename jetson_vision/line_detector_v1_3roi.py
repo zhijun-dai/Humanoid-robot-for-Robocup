@@ -80,37 +80,50 @@ class LineDetector:
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
+    # ── 预处理（整张鸟瞰图一次 Otsu，同 V2）──
+    def _preprocess(self, bgr):
+        """灰度转换 + IPM 鸟瞰 + 整图 Otsu 二值化 + 形态学闭运算。"""
+        if self._K is not None:
+            bgr = cv2.undistort(bgr, self._K, self._dist)
+        gray = np.max(bgr, axis=2)
+        bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
+
+        th_val = cv2.threshold(bird, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
+        th_val = clamp(int(th_val) + self.th_offset, 30, 200)
+        _, binary = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
+
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k3, iterations=1)
+        return bird, binary
+
     # ── 单个 ROI 扫描 ──
-    def _scan_roi(self, gray, y0, y1):
-        """扫描灰度图的一段 ROI 行，返回轨道中心 x 中位数或 None。"""
+    def _scan_roi(self, binary, y0, y1):
+        """扫描二值图的一段 ROI 行，返回轨道中心 x 中位数或 None。"""
         centers = []
         row_step = max(1, (y1 - y0) // self.scan_lines)
         for y in range(y0, y1, row_step):
-            line = gray[y, :]
-            th = cv2.threshold(line, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
-            th = clamp(int(th) + self.th_offset, 30, 200)
-            binary = cv2.threshold(line, th, 255, cv2.THRESH_BINARY)[1]
+            line = binary[y, :].astype(np.int32)
+            diff = np.diff(line)
+            rising = np.where(diff > 0)[0]   # 黑→白 (right edge)
+            falling = np.where(diff < 0)[0]  # 白→黑 (left edge)
 
-            diff = np.diff(binary.astype(np.int32))
-            rising = np.where(diff > 0)[0]    # 黑→白
-            falling = np.where(diff < 0)[0]   # 白→黑
-
-            if len(rising) >= 2 and len(falling) >= 2:
-                left = falling[0]
-                right = rising[-1]
-                if right - left > 10:
-                    centers.append((left + right) / 2)
+            # 寻找合理的黑段：每个白→黑后跟最近的黑→白即是一个轨道段
+            for fl in falling:
+                candidates = rising[rising > fl]
+                if len(candidates) == 0:
+                    continue
+                ri = candidates[0]
+                width = ri - fl
+                if 3 <= width <= self.bird_w * 0.7:
+                    centers.append((fl + ri) / 2.0)
+                    break  # 每行只取第一个有效段
         if not centers:
             return None
         return float(np.median(centers))
 
     # ── 主入口 ──
     def process(self, bgr):
-        if self._K is not None:
-            bgr = cv2.undistort(bgr, self._K, self._dist)
-
-        gray = np.max(bgr, axis=2)
-        bird = cv2.warpPerspective(gray, self.M, (self.bird_w, self.bird_h))
+        bird, binary = self._preprocess(bgr)
 
         # 3 层 ROI（近/中/远, 在鸟瞰图上从上到下）
         near_y0 = self.bird_h - 30
@@ -124,7 +137,7 @@ class LineDetector:
         for name, y0, y1 in [("near", near_y0, near_y1),
                                ("mid", mid_y0, mid_y1),
                                ("far", far_y0, far_y1)]:
-            cx = self._scan_roi(bird, y0, y1)
+            cx = self._scan_roi(binary, y0, y1)
             if cx is not None:
                 centers.append((cx, (y0 + y1) / 2))
 
