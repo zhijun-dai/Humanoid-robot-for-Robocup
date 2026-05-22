@@ -76,6 +76,13 @@ class LineDetector:
         self._prev_params = None
         self._jump_cnt = 0
 
+        # 底部对称锁定
+        self._bottom_lock_valid = False
+        self._bottom_lock_center = bird_w // 2
+
+        # 结构化置信度缓存
+        self._edge_stats = None
+
     # ── 鸟瞰变换 ──
     def _build_birdseye_matrix(self, lookahead):
         """IPM (Inverse Perspective Mapping) 标准做法：
@@ -325,17 +332,195 @@ class LineDetector:
 
         return deviation_px, heading_deg
 
+    # ── 底部对称锁定 ──
+    def _bottom_lock_check(self, binary):
+        """扫描鸟瞰图底部~20%行，检测黑线左右边缘对，评估对称性。
+
+        返回 dict: valid, center_px, pair_ratio, symmetry_error
+        """
+        h, w = binary.shape
+        y_start = int(h * 0.80)
+        total_rows = h - y_start
+        if total_rows <= 0:
+            return {"valid": False, "center_px": float(self._center_x),
+                    "pair_ratio": 0.0, "symmetry_error": 0.0}
+
+        valid_rows = 0
+        centers = []
+
+        for y in range(y_start, h):
+            row = binary[y, :].astype(np.int16)
+            d = np.diff(row)
+            # 白→黑：d ≈ -255（进入赛道线）
+            # 黑→白：d ≈ +255（离开赛道线）
+            falls = np.where(d <= -200)[0]   # 左边缘前一列
+            rises = np.where(d >= 200)[0]    # 右边缘列（最后一列黑像素）
+
+            if len(falls) == 0 or len(rises) == 0:
+                continue
+
+            # 为每一行找出最佳 fall–rise 对（中心最接近 self._center_x）
+            best_center = None
+            best_dist = float("inf")
+            for f in falls:
+                for r in rises:
+                    if r < f:
+                        continue
+                    first_black = f + 1   # 该段第一个黑色像素
+                    last_black = r        # 该段最后一个黑色像素
+                    # 双边缘均可见：左边缘不在 x=0，右边缘不在 x=w-1
+                    # diff 方式天然跳过触碰边界的段
+                    if last_black <= first_black:
+                        continue
+                    c = (first_black + last_black) / 2.0
+                    d = abs(c - self._center_x)
+                    if d < best_dist:
+                        best_dist = d
+                        best_center = c
+
+            if best_center is not None:
+                valid_rows += 1
+                centers.append(best_center)
+
+        pair_ratio = valid_rows / float(total_rows) if total_rows > 0 else 0.0
+
+        if len(centers) == 0 or pair_ratio < 0.55:
+            return {"valid": False, "center_px": float(self._center_x),
+                    "pair_ratio": pair_ratio, "symmetry_error": 0.0}
+
+        center_median = float(np.median(centers))
+        symmetry_error = center_median - self._center_x
+        symmetry_tol = 12.0
+
+        if abs(symmetry_error) > symmetry_tol:
+            return {"valid": False, "center_px": center_median,
+                    "pair_ratio": pair_ratio, "symmetry_error": symmetry_error}
+
+        return {"valid": True, "center_px": center_median,
+                "pair_ratio": pair_ratio, "symmetry_error": symmetry_error}
+
+    # ── 结构化置信度：边沿对扫描 ──
+    def _scan_edge_pairs(self, binary):
+        """扫描鸟瞰图每行找出车道边沿对，用于结构化置信度。
+        逐行查找白→黑→白过渡，识别连续的黑色游程，
+        然后看是否能配对成 track_width_px 间距的左右边沿对。
+
+        Returns:
+            dict: hit_ratio, edge_quality, width_std, width_factor 等
+            None: 数据不足（回退到单纯 inlier_ratio 置信度）
+        """
+        scan_step = max(1, self.bird_h // 50)   # 约扫描 50 行
+        track_w = self.track_width_px
+        width_tol = max(track_w * 0.30, 15.0)   # 配对容许误差
+        min_run_width = 2                        # 游程最小像素宽度（过滤噪点）
+        h, w = self.bird_h, self.bird_w
+
+        total_scanned = 0
+        pair_rows = 0
+        single_rows = 0
+        pair_widths = []
+
+        for y in range(0, h, scan_step):
+            total_scanned += 1
+            row = binary[y, :].astype(np.int16)
+
+            # 黑白过渡检测
+            d = np.diff(row)
+            # white→black: diff < 0, 黑色起点在 i+1
+            starts = np.where(d < 0)[0] + 1
+            # black→white: diff > 0, 黑色终点在 i
+            ends = np.where(d > 0)[0]
+
+            # 处理图像边界
+            if row[0] == 0:
+                starts = np.concatenate([[0], starts])
+            if row[-1] == 0:
+                ends = np.concatenate([ends, [w - 1]])
+
+            if len(starts) == 0 or len(ends) == 0:
+                continue
+
+            # 匹配起止点构建游程列表
+            runs = []
+            si = ei = 0
+            while si < len(starts) and ei < len(ends):
+                if ends[ei] >= starts[si]:
+                    run_w = int(ends[ei] - starts[si] + 1)
+                    if run_w >= min_run_width:
+                        runs.append((int(starts[si]), int(ends[ei])))
+                    si += 1
+                    ei += 1
+                elif ends[ei] < starts[si]:
+                    ei += 1
+                else:
+                    si += 1
+
+            if len(runs) == 0:
+                continue
+
+            if len(runs) >= 2:
+                # 寻找中心距最接近 track_w 的游程对
+                best_dist = None
+                best_err = width_tol + 1.0
+                for i_idx in range(len(runs)):
+                    c1 = (runs[i_idx][0] + runs[i_idx][1]) * 0.5
+                    for j_idx in range(i_idx + 1, len(runs)):
+                        c2 = (runs[j_idx][0] + runs[j_idx][1]) * 0.5
+                        dd = abs(c2 - c1)
+                        err = abs(dd - track_w)
+                        if err < best_err:
+                            best_err = err
+                            best_dist = dd
+                if best_dist is not None:
+                    pair_rows += 1
+                    pair_widths.append(best_dist)
+                else:
+                    single_rows += 1
+            else:
+                single_rows += 1
+
+        valid_rows = pair_rows + single_rows
+        if valid_rows < 3 or total_scanned < 2:
+            return None
+
+        # ── 三因子置信度组件 ──
+        hit_ratio = pair_rows / max(1.0, float(total_scanned))
+        edge_quality = (pair_rows * 1.0 + single_rows * 0.5) / max(1.0, float(valid_rows))
+
+        width_std = 0.0
+        width_factor = 1.0
+        if len(pair_widths) >= 2:
+            width_std = float(np.std(pair_widths, ddof=1))
+            max_std = max(track_w * 0.25, 10.0)
+            width_factor = max(0.05, 1.0 - min(1.0, width_std / max(1.0, max_std)))
+
+        return {
+            "hit_ratio": max(0.01, min(1.0, hit_ratio)),
+            "edge_quality": max(0.1, min(1.0, edge_quality)),
+            "width_std": width_std,
+            "width_factor": max(0.05, min(1.0, width_factor)),
+            "pair_rows": pair_rows,
+            "single_rows": single_rows,
+            "valid_rows": valid_rows,
+        }
+
     # ── 主处理入口 ──
     def process(self, bgr):
         if self._K is not None:
             bgr = cv2.undistort(bgr, self._K, self._dist)
         bird, binary_raw, binary, pts = self._preprocess(bgr)
 
+        # ── 底部对称锁定 ──
+        lock = self._bottom_lock_check(binary)
+        self._bottom_lock_valid = lock["valid"]
+        self._bottom_lock_center = lock["center_px"]
+
         # 默认值
         dev_px = None
         heading_deg = 0.0
         conf = 0.0
         model = None
+        self._edge_stats = None
 
         if pts is not None and len(pts) >= 10:
             # 并行拟合两个模型
@@ -359,7 +544,22 @@ class LineDetector:
                 candidates.sort(key=lambda x: x[0], reverse=True)
                 model = candidates[0][1]
                 dev_px, heading_deg = self._compute_dev_heading(model)
-                conf = clamp(model["inlier_ratio"] * 1.5, 0.1, 1.0)
+                # 结构化置信度：几何 inlier × 边沿对质量三因子
+                self._edge_stats = self._scan_edge_pairs(binary)
+                if self._edge_stats is not None:
+                    base = model["inlier_ratio"]
+                    conf = base * self._edge_stats["hit_ratio"] * \
+                           self._edge_stats["edge_quality"] * self._edge_stats["width_factor"]
+                    conf = clamp(conf, 0.05, 1.0)
+                else:
+                    conf = clamp(model["inlier_ratio"] * 1.5, 0.1, 1.0)
+                    self._edge_stats = None
+
+                # ── 底部对称锁定融合 ──
+                BOTTOM_LOCK_BLEND = 0.2
+                if self._bottom_lock_valid:
+                    lock_dev = self._bottom_lock_center - self._center_x
+                    dev_px = (1.0 - BOTTOM_LOCK_BLEND) * dev_px + BOTTOM_LOCK_BLEND * lock_dev
 
         # ── 时序平滑 + 跳变拒绝 ──
         if dev_px is not None and model is not None:
@@ -461,6 +661,13 @@ class LineDetector:
             "model_type": model["model"] if model else None,
             "inlier_ratio": model["inlier_ratio"] if model else 0.0,
             "heading_deg": heading_deg,
+            "_bottom_lock_valid": self._bottom_lock_valid,
+            "edge_hit_ratio": self._edge_stats["hit_ratio"] if self._edge_stats else 0.0,
+            "edge_quality": self._edge_stats["edge_quality"] if self._edge_stats else 0.0,
+            "edge_width_std": self._edge_stats["width_std"] if self._edge_stats else 0.0,
+            "edge_width_factor": self._edge_stats["width_factor"] if self._edge_stats else 0.0,
+            "edge_pair_rows": self._edge_stats["pair_rows"] if self._edge_stats else 0,
+            "edge_single_rows": self._edge_stats["single_rows"] if self._edge_stats else 0,
         }
         return dev_px, heading_deg, conf, vis, debug
 

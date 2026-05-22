@@ -65,6 +65,14 @@ KD_C = _env_or_cfg(CFG, "pid.curve.kd", 0.10)
 STEER_SAT = _env_or_cfg(CFG, "steer.sat", 45.0)
 STEER_SCALE = _env_or_cfg(CFG, "steer.scale", 1.0)
 
+# ── 抗抖动参数（环境变量覆盖）──
+SHAKE_RMS_TRIGGER_PX = float(os.environ.get("SHAKE_RMS_TRIGGER_PX", 6.0))
+SHAKE_ALPHA_HIGH = float(os.environ.get("SHAKE_ALPHA_HIGH", 0.88))
+SHAKE_KD_SCALE = float(os.environ.get("SHAKE_KD_SCALE", 0.6))
+SHAKE_DECAY_FRAMES = int(os.environ.get("SHAKE_DECAY_FRAMES", 8))
+SHAKE_WINDOW = int(os.environ.get("SHAKE_WINDOW", 5))
+SHAKE_STEER_RATE_LIMIT = float(os.environ.get("SHAKE_STEER_RATE_LIMIT", 14.0))
+
 BASE_SPEED = float(_cfg_get(CFG, "webots.base_speed", 3.2))
 STEER_W = float(_cfg_get(CFG, "webots.steer_to_wheel", 0.04))
 MAX_SPEED = float(_cfg_get(CFG, "webots.max_speed", 6.28))
@@ -101,6 +109,7 @@ ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH, cam_w=W, ca
 # ── PID 状态 ──
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
        "lost_frames": 0, "smoothed_err": 0.0}
+shake = {"near_err_history": [], "shake_active_frames": 0, "diff_rms_px": 0.0}
 _start_t = None
 
 # ── 日志 ──
@@ -150,6 +159,22 @@ while robot.step(TIMESTEP) != -1:
         _log(f"  [debug] raw saved {ok} -> {path}")
         ld._snap_cnt += 1
 
+    # ── 抖动检测（diff RMS tracking，参考老代码 near_err_history）──
+    # 仅在有效检测时更新：丢线/低置信期间保持当前 shake 状态不变（防短暂丢线误恢复）
+    if dev_px is not None and conf > 0.08:
+        hist = shake["near_err_history"]
+        hist.append(float(dev_px))
+        if len(hist) > SHAKE_WINDOW + 1:
+            del hist[0]
+        if len(hist) >= 3:
+            diffs = [hist[i] - hist[i - 1] for i in range(1, len(hist))]
+            rms = math.sqrt(sum(d * d for d in diffs) / len(diffs))
+            shake["diff_rms_px"] = rms
+            if rms >= SHAKE_RMS_TRIGGER_PX:
+                shake["shake_active_frames"] = SHAKE_DECAY_FRAMES
+            elif shake["shake_active_frames"] > 0:
+                shake["shake_active_frames"] -= 1
+
     steer = 0.0
     fused_err = 0.0
     curve = False
@@ -168,6 +193,8 @@ while robot.step(TIMESTEP) != -1:
 
         # ── EMA 强平滑（老代码：alpha=0.65，新=0.35）──
         SMOOTH_ALPHA = 0.65 if conf > 0.4 else 0.85
+        if shake["shake_active_frames"] > 0:
+            SMOOTH_ALPHA = SHAKE_ALPHA_HIGH
         pid["smoothed_err"] = SMOOTH_ALPHA * pid["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
 
         # ── 抗积分饱和 ──
@@ -182,11 +209,12 @@ while robot.step(TIMESTEP) != -1:
         derr = (pid["smoothed_err"] - pid["last_err"]) / max(dt, 1e-3)
         pid["last_err"] = pid["smoothed_err"]
 
-        pid_out = KP * pid["smoothed_err"] + KI * pid["integral"] + KD * derr
+        kd_eff = KD * SHAKE_KD_SCALE if shake["shake_active_frames"] > 0 else KD
+        pid_out = KP * pid["smoothed_err"] + KI * pid["integral"] + kd_eff * derr
         steer = STEER_SAT * math.tanh(pid_out / STEER_SCALE)
 
         # ── 转向变化率限制（老代码：clamp 14/帧）──
-        max_ds = 14.0 * dt * 30  # 约 14/帧 ≈ 420/s
+        max_ds = SHAKE_STEER_RATE_LIMIT * dt * 30  # 约 14/帧 ≈ 420/s
         ds = steer - pid["last_steer"]
         if abs(ds) > max_ds:
             steer = pid["last_steer"] + max_ds * (1 if ds > 0 else -1)
@@ -223,7 +251,7 @@ while robot.step(TIMESTEP) != -1:
     # ── 日志（4Hz） ──
     t = robot.getTime()
     if int(t * 4) != int((t - TIMESTEP / 1000.0) * 4):
-        _log(f"t={t:.1f}s steer={steer:.1f} dev={dev_px}px head={heading_deg}deg conf={conf:.2f} err={fused_err:.2f}")
+        _log(f"t={t:.1f}s steer={steer:.1f} dev={dev_px}px head={heading_deg}deg conf={conf:.2f} err={fused_err:.2f} shake={shake['shake_active_frames']} rms={shake['diff_rms_px']:.1f}")
 
     # 超时退出
     if t - (_start_t or 0) > MAX_SEC:
