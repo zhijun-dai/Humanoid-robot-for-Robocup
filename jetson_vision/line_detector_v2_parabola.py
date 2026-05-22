@@ -7,7 +7,7 @@
 
 时序稳定性机制（移植自 V0 3-ROI 检测器）：
   - 逐行 diff 边缘对验证：找白→黑（左沿）和黑→白（右沿）过渡，拒绝过窄/过宽对
-  - 单边可见时从期望线宽外推中心（不再用 np.mean 偏到可见边）
+  - 单边可见时从轨道半间距外推赛道中心（不再用 np.mean 偏到可见边）
   - 丢失检测时输出 last_dev*0.92 / last_heading*0.88（V0 非复合衰减模式）
   - 参数平滑仅在拟合高置信时激活，错误参数从 last-good 回退
 
@@ -34,7 +34,7 @@ class LineDetector:
         bird_w=160,
         lookahead_cm=(10, 80),
         th_offset=6,
-        track_width_cm=3.0,          # 物理线宽 (cm)，用于单边外推
+        track_width_cm=35.5,         # 赛道两条黑线中心间距 (cm)
     ):
         self.cam_height = cam_height_cm
         self.cam_pitch = np.radians(cam_pitch_deg)
@@ -53,13 +53,12 @@ class LineDetector:
 
         self.M = self._build_birdseye_matrix(lookahead_cm)
 
-        # ── 从鸟瞰几何推导期望线宽 (px) ──
-        near_cm = max(lookahead_cm[0], 20.0)
+        # ── 从鸟瞰几何推导赛道黑线间距 (px) ──
+        mid_cm = (lookahead_cm[0] + lookahead_cm[1]) / 2.0
         vfov_rad = np.radians(cam_vfov_deg)
         hfov_rad = 2.0 * np.arctan(np.tan(vfov_rad / 2.0) * cam_w / cam_h)
-        ground_w_near = 2.0 * near_cm * np.tan(hfov_rad / 2.0)
-        W_cm = ground_w_near * 0.85
-        self._track_width_px = track_width_cm * (bird_w / W_cm)
+        ground_w_mid = 2.0 * mid_cm * np.tan(hfov_rad / 2.0)
+        self._track_width_px = track_width_cm * (bird_w / ground_w_mid)
 
         # ── 时序状态 ──
         self._last_dev = None          # 上帧最终偏差
@@ -115,64 +114,82 @@ class LineDetector:
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
-    # ── 逐行边缘对检测（移植 V0 diff 验证逻辑） ──
+    # ── 逐行双黑线检测 → 推算赛道中心 ──
     def _scan_rows(self, binary, step=4):
-        """每行找黑白过渡对；仅见单边时用期望线宽外推。
+        """每行找所有黑线段（4–40px宽），按段数推算赛道中心。
 
+        赛道有两条平行黑线（左右边缘线），中心间距约 track_width_cm。
         binary: 0=黑(线), 255=白(背景)
 
         Returns
         -------
         points : list of (cx, row_y, weight)
-            weight 1.0 = 完整双边, 0.5 = 单边外推
+            weight 1.0 = 双段赛道中心, 0.5 = 单段外推赛道中心
         stats  : dict {'full': N, 'half': N}
         """
         points = []
         n_full, n_half = 0, 0
-        half_w = max(2.0, self._track_width_px / 2.0)
-        max_w = max(60.0, self._track_width_px * 3.0)
+        half_track = self._track_width_px / 2.0   # 赛道半间距 (~59 px)
+        min_seg_w = 4                              # 单条黑线最小宽度
+        max_seg_w = 40                             # 单条黑线最大宽度
+        track_tol = max(20.0, self._track_width_px * 0.4)  # 双段配对容差
 
         for row in range(0, self.bird_h, step):
             line = binary[row, :]
-            # diff <0: 255→0 = 白→黑 = 左沿, diff >0: 0→255 = 黑→白 = 右沿
+            # diff <0: 255→0 = 白→黑 = 黑段左沿
+            # diff >0: 0→255 = 黑→白 = 黑段右沿
             diff = np.diff(line.astype(np.int32) // 255)
 
-            left_edges  = np.where(diff < 0)[0]   # 左沿 (白→黑)
-            right_edges = np.where(diff > 0)[0]   # 右沿 (黑→白)
+            left_edges  = np.where(diff < 0)[0]
+            right_edges = np.where(diff > 0)[0]
 
-            # 1) 完整双边对 — 选最接近画面中心的那个
-            if len(left_edges) >= 1 and len(right_edges) >= 1:
-                best_cx, best_dist = None, float('inf')
-                for le in left_edges:
-                    rc = right_edges[right_edges > le]
-                    if len(rc) == 0:
-                        continue
-                    re = rc[0]
-                    width = re - le
-                    # V0 式宽度检查: 不能太窄 (<4px) 也不能太宽 (>3x期望)
-                    if 4 < width < max_w:
-                        cx = (le + re) / 2.0
-                        dist = abs(cx - self._center_x)
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_cx = cx
-                if best_cx is not None:
-                    points.append((best_cx, float(row), 1.0))
-                    n_full += 1
+            # ── 构建黑段列表（左沿+右沿配对，按宽度过滤） ──
+            segments = []
+            for le in left_edges:
+                rc = right_edges[right_edges > le]
+                if len(rc) == 0:
                     continue
+                re = rc[0]                         # 紧邻的右沿
+                width = re - le
+                if min_seg_w <= width <= max_seg_w:
+                    segments.append({
+                        'left': float(le),
+                        'right': float(re),
+                        'cx': float((le + re) * 0.5),
+                    })
 
-            # 2) 单边外推 — 用期望线宽估算中心
-            if self._track_width_px > 3:
-                if len(left_edges) >= 1:
-                    cx = left_edges[0] + half_w
-                    if 0 <= cx < self.bird_w:
-                        points.append((cx, float(row), 0.5))
-                        n_half += 1
-                elif len(right_edges) >= 1:
-                    cx = right_edges[-1] - half_w
-                    if 0 <= cx < self.bird_w:
-                        points.append((cx, float(row), 0.5))
-                        n_half += 1
+            # ── 双段：找间距最接近赛道中心间距的段对 ──
+            if len(segments) >= 2:
+                best_pair = None
+                best_err = float('inf')
+                for i in range(len(segments)):
+                    for j in range(i + 1, len(segments)):
+                        gap = abs(segments[j]['cx'] - segments[i]['cx'])
+                        err = abs(gap - self._track_width_px)
+                        if err < best_err:
+                            best_err = err
+                            best_pair = (segments[i], segments[j])
+                if best_pair is not None:
+                    gap = abs(best_pair[0]['cx'] - best_pair[1]['cx'])
+                    if abs(gap - self._track_width_px) <= track_tol:
+                        track_cx = (best_pair[0]['cx'] + best_pair[1]['cx']) * 0.5
+                        points.append((track_cx, float(row), 1.0))
+                        n_full += 1
+                        continue
+                # 未配成对 → 继续执行单段逻辑
+
+            # ── 单段：用距离中心最近的段做外推 ──
+            if len(segments) >= 1:
+                best_seg = min(segments, key=lambda s: abs(s['cx'] - self._center_x))
+                if best_seg['cx'] < self._center_x:
+                    # 可见段在左边 → 赛道中心在右边
+                    cx = best_seg['cx'] + half_track
+                else:
+                    # 可见段在右边 → 赛道中心在左边
+                    cx = best_seg['cx'] - half_track
+                if 0 <= cx < self.bird_w:
+                    points.append((cx, float(row), 0.5))
+                    n_half += 1
 
         return points, {'full': n_full, 'half': n_half}
 
