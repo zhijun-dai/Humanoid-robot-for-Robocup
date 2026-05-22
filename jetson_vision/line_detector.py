@@ -78,26 +78,54 @@ class LineDetector:
 
     # ── 鸟瞰变换 ──
     def _build_birdseye_matrix(self, lookahead):
+        """IPM (Inverse Perspective Mapping) 标准做法：
+        1. 定义地面上的矩形区域（物理坐标）
+        2. 用 pinhole 模型投影到图像 → 得到梯形 src
+        3. dst 是规则的矩形 → getPerspectiveTransform
+        """
         near, far = lookahead
         near = max(near, 20.0)
-        vfov_rad = np.radians(self.cam_vfov_deg)
 
-        def ground_y(z_cm):
-            ray = np.arctan2(self.cam_height, z_cm)
-            v = ray - self.cam_pitch
-            # 旧代码公式: y = (0.5 - v/vfov) * img_h
-            # 相机低头45°, 画面顶部=更朝下=近处, 底部=近水平=远处
-            return (0.5 - v / vfov_rad) * self.img_h
+        # ── Pinhole 相机参数 ──
+        fy = self.img_w / (2.0 * np.tan(np.radians(self.cam_vfov_deg) / 2.0)
+                           * self.img_h / self.img_w)  # approximate
+        # 更准: 从 HFOV 反算
+        hfov_rad = 2.0 * np.arctan(np.tan(np.radians(self.cam_vfov_deg) / 2.0)
+                                   * self.img_w / self.img_h)
+        fx = self.img_w / (2.0 * np.tan(hfov_rad / 2.0))
+        fy_calc = self.img_h / (2.0 * np.tan(np.radians(self.cam_vfov_deg) / 2.0))
+        cx = self.img_w / 2.0
+        cy = self.img_h / 2.0
 
-        y_far = ground_y(far)
-        y_near = ground_y(near)
-        src = np.float32([
-            [self.img_w - 1, y_near], [0, y_near],
-            [self.img_w - 1, y_far],  [0, y_far],
+        # ── 地面矩形四角 (近处宽度为限，确保四点都在画面内) ──
+        hfov_half = hfov_rad / 2.0
+        ground_w_near = 2.0 * near * np.tan(hfov_half) * np.sqrt(1.0 + (self.cam_height / near) ** 2)
+        W = ground_w_near * 0.85  # 近处地面可见宽度，留 15% 边距
+
+        world_pts = np.float32([
+            [W / 2, near], [-W / 2, near],   # near right, near left
+            [-W / 2, far], [W / 2, far],     # far left, far right
         ])
+
+        # ── 投影 world→image（pinhole 模型）──
+        cp, sp = np.cos(self.cam_pitch), np.sin(self.cam_pitch)
+        src_pts = []
+        for wx, wz in world_pts:
+            # 世界 → 相机坐标 (旋转 pitch，相机 Y 朝下)
+            Xc = wx
+            Yc = -self.cam_height * cp + wz * sp
+            Zc = self.cam_height * sp + wz * cp
+            if Zc < 0.01:
+                Zc = 0.01
+            u = fx * Xc / Zc + cx
+            v = fy_calc * Yc / Zc + cy
+            src_pts.append([u, v])
+        src = np.float32(src_pts)
+
+        # ── dst 矩形 (标准: 近=下, 远=上) ──
         dst = np.float32([
-            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],  # near → bottom
-            [self.bird_w - 1, 0],               [0, 0],                # far → top
+            [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],  # near right, left → bottom
+            [0, 0], [self.bird_w - 1, 0],                                # far left, right → top
         ])
         return cv2.getPerspectiveTransform(src, dst)
 
