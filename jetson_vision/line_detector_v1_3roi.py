@@ -26,6 +26,7 @@ class LineDetector:
         lookahead_cm=(10, 80),
         th_offset=6,
         scan_lines=5,
+        track_width_cm=35.5,
     ):
         self.cam_height = cam_height_cm
         self.cam_pitch = np.radians(cam_pitch_deg)
@@ -42,6 +43,13 @@ class LineDetector:
         self._dist = None
 
         self.M = self._build_birdseye_matrix(lookahead_cm)
+
+        # —— 从鸟瞰几何推导赛道两条黑线中心间距 (px) ——
+        mid_cm = (lookahead_cm[0] + lookahead_cm[1]) / 2.0
+        vfov_rad = np.radians(cam_vfov_deg)
+        hfov_rad = 2.0 * np.arctan(np.tan(vfov_rad / 2.0) * cam_w / cam_h)
+        ground_w_mid = 2.0 * mid_cm * np.tan(hfov_rad / 2.0)
+        self._track_width_px = track_width_cm * (bird_w / ground_w_mid)
 
         self._prev_dev = 0.0
         self._prev_heading = 0.0
@@ -98,28 +106,72 @@ class LineDetector:
 
     # ── 单个 ROI 扫描 ──
     def _scan_roi(self, binary, y0, y1):
-        """扫描二值图的一段 ROI 行，返回轨道中心 x 中位数或 None。"""
-        centers = []
+        """扫描二值图的一段 ROI 行，识别两条黑线后推算赛道中心 x 中位数。
+
+        每条黑线(白→黑→白)构成一个段。段间距约等于 track_width_px 的两个段
+        配对即为左右赛道边线；赛道中心 = 两段中心的均值。
+        若仅可见一条边线，则从该段中心外推 track_width_px/2 得到赛道中心。
+        返回 None 表示该 ROI 内未找到任何黑段。
+        """
+        track_centers = []
+        half_track = self._track_width_px / 2.0
+        min_seg_w = 4                              # 单条黑线最小宽度
+        max_seg_w = 40                             # 单条黑线最大宽度
+        track_tol = max(20.0, self._track_width_px * 0.4)  # 双段配对容差
         row_step = max(1, (y1 - y0) // self.scan_lines)
+
         for y in range(y0, y1, row_step):
             line = binary[y, :].astype(np.int32)
             diff = np.diff(line)
             rising = np.where(diff > 0)[0]   # 黑→白 (right edge)
             falling = np.where(diff < 0)[0]  # 白→黑 (left edge)
 
-            # 寻找合理的黑段：每个白→黑后跟最近的黑→白即是一个轨道段
+            # ── 构建当前行所有黑段（左沿 + 紧邻右沿 → 段）──
+            segments = []
             for fl in falling:
                 candidates = rising[rising > fl]
                 if len(candidates) == 0:
                     continue
-                ri = candidates[0]
+                ri = candidates[0]                # 紧邻右沿
                 width = ri - fl
-                if 3 <= width <= self.bird_w * 0.7:
-                    centers.append((fl + ri) / 2.0)
-                    break  # 每行只取第一个有效段
-        if not centers:
+                if min_seg_w <= width <= max_seg_w:
+                    segments.append({'cx': float((fl + ri) * 0.5)})
+
+            # ── 双段：找间距最接近赛道中心间距的段对 ──
+            if len(segments) >= 2:
+                best_pair = None
+                best_err = float('inf')
+                for i in range(len(segments)):
+                    for j in range(i + 1, len(segments)):
+                        gap = abs(segments[j]['cx'] - segments[i]['cx'])
+                        err = abs(gap - self._track_width_px)
+                        if err < best_err:
+                            best_err = err
+                            best_pair = (segments[i], segments[j])
+                if best_pair is not None:
+                    gap = abs(best_pair[0]['cx'] - best_pair[1]['cx'])
+                    if abs(gap - self._track_width_px) <= track_tol:
+                        # 赛道中心 = 左右黑线中心的均值
+                        track_cx = (best_pair[0]['cx'] + best_pair[1]['cx']) * 0.5
+                        track_centers.append(track_cx)
+                        continue
+                # 未配成对 → 继续执行单段逻辑
+
+            # ── 单段：用距图像中心最近的段外推赛道中心 ──
+            if len(segments) >= 1:
+                best_seg = min(segments, key=lambda s: abs(s['cx'] - self._center_x))
+                if best_seg['cx'] < self._center_x:
+                    # 可见段在左边 → 赛道中心在右边 half_track 处
+                    cx = best_seg['cx'] + half_track
+                else:
+                    # 可见段在右边 → 赛道中心在左边 half_track 处
+                    cx = best_seg['cx'] - half_track
+                if 0 <= cx < self.bird_w:
+                    track_centers.append(cx)
+
+        if not track_centers:
             return None
-        return float(np.median(centers))
+        return float(np.median(track_centers))
 
     # ── 主入口 ──
     def process(self, bgr):
