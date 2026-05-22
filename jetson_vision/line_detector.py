@@ -164,18 +164,82 @@ class LineDetector:
         return bird, binary_raw, binary, pts
 
     # ── 直线模型拟合 ──
-    def _fit_straight_model(self, pts, n_iter=180):
-        """RANSAC 拟合两条平行线（间距 = track_width_px）。
+    def _fit_straight_model(self, binary, pts):
+        """Edge-pair based straight model fitting with RANSAC fallback.
+
+        Uses _scan_edge_pairs data to find left/right track edges per row,
+        fits lines to each group (PCA), and averages for the center line.
+        Falls back to 2-point RANSAC if insufficient pair data (< 5 pair rows).
+
         返回 {'model':'straight', 'a','b','c', 'inlier_ratio', 'left_c', 'right_c'} 或 None。
-        中心线: a*x + b*y + c = 0  (a²+b²=1)
-        左/右边缘: a*x + b*y + c ± w/2 = 0
+        中心线: a*x + b*y + c = 0  (a^2+b^2=1)
+        左/右边缘: a*x + b*y + c +/- w/2 = 0
         """
-        if len(pts) < 20:
+        if pts is None or len(pts) < 20:
             return None
+
         w = self.track_width_px
+        N = len(pts)
+        edge_data = self._scan_edge_pairs(binary)
+
+        if edge_data is not None:
+            pc = edge_data.get("pair_centers", [])
+            if len(pc) >= 5:
+                # ── 收集左右中心组 ──
+                left_pts = np.array([[lx, y] for y, lx, rx in pc], dtype=np.float32)
+                right_pts = np.array([[rx, y] for y, lx, rx in pc], dtype=np.float32)
+
+                # PCA 线拟合
+                def _pca_line(grp):
+                    mean = grp.mean(axis=0)
+                    centered = grp - mean
+                    cov = np.dot(centered.T, centered)
+                    eigvals, eigvecs = np.linalg.eigh(cov)
+                    d = eigvecs[:, 1]  # 最大特征值方向 = 线方向
+                    a0, b0 = -d[1], d[0]
+                    n = np.sqrt(a0 * a0 + b0 * b0)
+                    if n < 1e-10:
+                        return None
+                    return (a0 / n, b0 / n, -(a0 / n * mean[0] + b0 / n * mean[1]))
+
+                ll = _pca_line(left_pts)
+                rl = _pca_line(right_pts)
+                if ll is not None and rl is not None:
+                    a_l, b_l, c_l = ll
+                    a_r, b_r, c_r = rl
+
+                    # 对齐法向量方向
+                    if a_l * a_r + b_l * b_r < 0:
+                        a_r, b_r = -a_r, -b_r
+
+                    # 中线 = 左右平均
+                    a = (a_l + a_r) * 0.5
+                    b = (b_l + b_r) * 0.5
+                    nr = np.sqrt(a * a + b * b)
+                    if nr < 1e-10:
+                        a, b = a_l, b_l
+                    else:
+                        a /= nr
+                        b /= nr
+                    c = (c_l + c_r) * 0.5
+
+                    # 内点比例
+                    d1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c + w / 2)
+                    d2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c - w / 2)
+                    ratio = float(np.sum((d1 < 3.5) | (d2 < 3.5))) / N
+                    if ratio >= 0.05:
+                        return {
+                            "model": "straight",
+                            "a": float(a), "b": float(b), "c": float(c),
+                            "inlier_ratio": ratio,
+                            "left_c": float(c + w / 2),
+                            "right_c": float(c - w / 2),
+                        }
+
+        # ── RANSAC 回退 ──
+        n_iter = 180
         best_score = 0
         best = None
-        N = len(pts)
 
         for _ in range(n_iter):
             idx = np.random.choice(N, 2, replace=False)
@@ -184,45 +248,41 @@ class LineDetector:
             dy = p2[1] - p1[1]
             if abs(dx) < 0.5 and abs(dy) < 0.5:
                 continue
-            # 法向量
             a = -dy
             b = dx
-            norm = np.sqrt(a * a + b * b)
-            a /= norm
-            b /= norm
+            norm_val = np.sqrt(a * a + b * b)
+            a /= norm_val
+            b /= norm_val
             c = -(a * p1[0] + b * p1[1])
 
-            # 三条假设：采样线是中心 / 左边缘 / 右边缘
-            # 边缘线在 c ± w/2，另一条在 c ∓ w/2
             best_local = 0
             best_local_c = c
-            # H1: 采样线 = 中心 → 边缘在 c ± w/2
-            h1_d1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c + w / 2)
-            h1_d2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c - w / 2)
-            s1 = np.sum((h1_d1 < 3.5) | (h1_d2 < 3.5))
+            # H1: 采样线 = 中心 → 边缘在 c +/- w/2
+            d1_1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c + w / 2)
+            d1_2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c - w / 2)
+            s1 = np.sum((d1_1 < 3.5) | (d1_2 < 3.5))
             if s1 > best_local:
                 best_local = s1
                 best_local_c = c
-            # H2: 采样线 = 左边缘 → 中心 c = c_line + w/2, 右边缘 c + w
-            c_center2 = c - w / 2  # 如果采样线是左边缘，中心在右
-            h2_d1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c_center2 + w / 2)
-            h2_d2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c_center2 - w / 2)
-            s2 = np.sum((h2_d1 < 3.5) | (h2_d2 < 3.5))
+            # H2: 采样线 = 左边缘 → 中心 c_center = c - w/2
+            cc2 = c - w / 2
+            d2_1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + cc2 + w / 2)
+            d2_2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + cc2 - w / 2)
+            s2 = np.sum((d2_1 < 3.5) | (d2_2 < 3.5))
             if s2 > best_local:
                 best_local = s2
-                best_local_c = c_center2
-            # H3: 采样线 = 右边缘 → 中心 c = c_line - w/2
-            c_center3 = c + w / 2
-            h3_d1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c_center3 + w / 2)
-            h3_d2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + c_center3 - w / 2)
-            s3 = np.sum((h3_d1 < 3.5) | (h3_d2 < 3.5))
+                best_local_c = cc2
+            # H3: 采样线 = 右边缘 → 中心 c_center = c + w/2
+            cc3 = c + w / 2
+            d3_1 = np.abs(a * pts[:, 0] + b * pts[:, 1] + cc3 + w / 2)
+            d3_2 = np.abs(a * pts[:, 0] + b * pts[:, 1] + cc3 - w / 2)
+            s3 = np.sum((d3_1 < 3.5) | (d3_2 < 3.5))
             if s3 > best_local:
                 best_local = s3
-                best_local_c = c_center3
+                best_local_c = cc3
 
             if best_local > best_score:
                 best_score = best_local
-                # 确保 a² + b² = 1
                 best = (a, b, best_local_c)
 
         if best is None or best_score / N < 0.08:
@@ -419,6 +479,7 @@ class LineDetector:
         pair_rows = 0
         single_rows = 0
         pair_widths = []
+        pair_centers = []  # list of (y, left_cx, right_cx) for each row with a valid pair
 
         for y in range(0, h, scan_step):
             total_scanned += 1
@@ -462,6 +523,7 @@ class LineDetector:
                 # 寻找中心距最接近 track_w 的游程对
                 best_dist = None
                 best_err = width_tol + 1.0
+                best_pair_runs = None
                 for i_idx in range(len(runs)):
                     c1 = (runs[i_idx][0] + runs[i_idx][1]) * 0.5
                     for j_idx in range(i_idx + 1, len(runs)):
@@ -471,9 +533,17 @@ class LineDetector:
                         if err < best_err:
                             best_err = err
                             best_dist = dd
+                            best_pair_runs = (runs[i_idx], runs[j_idx])
                 if best_dist is not None:
                     pair_rows += 1
                     pair_widths.append(best_dist)
+                    # 记录左右中心 (left = 较小 x, right = 较大 x)
+                    r1, r2 = best_pair_runs
+                    cx1 = (r1[0] + r1[1]) * 0.5
+                    cx2 = (r2[0] + r2[1]) * 0.5
+                    lx = min(cx1, cx2)
+                    rx = max(cx1, cx2)
+                    pair_centers.append((y, lx, rx))
                 else:
                     single_rows += 1
             else:
@@ -502,6 +572,7 @@ class LineDetector:
             "pair_rows": pair_rows,
             "single_rows": single_rows,
             "valid_rows": valid_rows,
+            "pair_centers": pair_centers,
         }
 
     # ── 主处理入口 ──
@@ -524,7 +595,7 @@ class LineDetector:
 
         if pts is not None and len(pts) >= 10:
             # 并行拟合两个模型
-            straight = self._fit_straight_model(pts)
+            straight = self._fit_straight_model(binary, pts)
             arc = self._fit_arc_model(pts)
 
             # 选择更好的模型（hysteresis：当前模型有30%加成）
