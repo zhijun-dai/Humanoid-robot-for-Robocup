@@ -550,7 +550,7 @@ class LineDetector:
                     base = model["inlier_ratio"]
                     conf = base * self._edge_stats["hit_ratio"] * \
                            self._edge_stats["edge_quality"] * self._edge_stats["width_factor"]
-                    conf = clamp(conf, 0.05, 1.0)
+                    conf = clamp(conf, 0.10, 1.0)
                 else:
                     conf = clamp(model["inlier_ratio"] * 1.5, 0.1, 1.0)
                     self._edge_stats = None
