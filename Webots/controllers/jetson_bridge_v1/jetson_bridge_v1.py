@@ -1,4 +1,4 @@
-"""Webots 控制器 — V1 warp + 3-ROI"""
+"""Webots 控制器 — V1 (warp + V0 全套检测机制)"""
 from __future__ import annotations
 import json, math, os, sys, time, atexit
 import numpy as np
@@ -10,50 +10,7 @@ if _JETSON_DIR not in sys.path:
 
 from controller import Supervisor
 import cv2
-from line_detector_v1_3roi import LineDetector
-
-def _cfg_get(cfg, path, default):
-    cur = cfg
-    for key in path.split("."):
-        if not isinstance(cur, dict) or key not in cur:
-            return default
-        cur = cur[key]
-    return cur
-
-def _load_cfg():
-    for p in [
-        os.path.join(_CTRL_DIR, "line_follow_params.json"),
-        os.path.abspath(os.path.join(_CTRL_DIR, "..", "..", "..", "line_follow_params.json")),
-        os.path.abspath("line_follow_params.json"),
-    ]:
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-CFG = _load_cfg()
-CAM_PITCH = 45.0
-CAM_HEIGHT = 38.0
-CAM_VFOV = 43.6
-TRACK_W_CM = 35.5
-
-def _env_or_cfg(cfg, key, default):
-    env_key = "JETSON_" + key.upper().replace(".", "_")
-    if env_key in os.environ:
-        return float(os.environ[env_key])
-    return float(_cfg_get(cfg, key, default))
-
-KP = _env_or_cfg(CFG, "pid.straight.kp", 0.5)
-KI = _env_or_cfg(CFG, "pid.straight.ki", 0.004)
-KD = _env_or_cfg(CFG, "pid.straight.kd", 0.10)
-I_CLAMP = float(_cfg_get(CFG, "pid.i_clamp", 60.0))
-STEER_SAT = _env_or_cfg(CFG, "steer.sat", 45.0)
-STEER_SCALE = _env_or_cfg(CFG, "steer.scale", 0.9)
-BASE_SPEED = float(_cfg_get(CFG, "webots.base_speed", 3.2))
-STEER_W = float(_cfg_get(CFG, "webots.steer_to_wheel", 0.04))
-MAX_SPEED = float(_cfg_get(CFG, "webots.max_speed", 6.28))
+from line_detector_v1_warp import LineDetector
 
 robot = Supervisor()
 TIMESTEP = int(robot.getBasicTimeStep())
@@ -63,15 +20,30 @@ camera = robot.getDevice("camera_ext")
 camera.enable(TIMESTEP)
 W, H = camera.getWidth(), camera.getHeight()
 
+ld = LineDetector(cam_w=W, cam_h=H, cam_height_cm=38, cam_pitch_deg=45, cam_vfov_deg=43.6)
+
+def _env_or_cfg(key, default):
+    env_key = "JETSON_" + key.upper().replace(".", "_")
+    if env_key in os.environ:
+        return float(os.environ[env_key])
+    return float(default)
+
+KP = _env_or_cfg("pid.straight.kp", 0.5)
+KI = _env_or_cfg("pid.straight.ki", 0.004)
+KD = _env_or_cfg("pid.straight.kd", 0.10)
+I_CLAMP = 60.0
+STEER_SAT = _env_or_cfg("steer.sat", 45.0)
+STEER_SCALE = _env_or_cfg("steer.scale", 0.9)
+BASE_SPEED = 3.2
+STEER_W = 0.04
+MAX_SPEED = 6.28
+
 left = robot.getDevice("left wheel motor")
 right = robot.getDevice("right wheel motor")
 left.setPosition(float("inf"))
 right.setPosition(float("inf"))
 left.setVelocity(0.0)
 right.setVelocity(0.0)
-
-ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH,
-                  cam_vfov_deg=CAM_VFOV, cam_w=W, cam_h=H, th_offset=6)
 
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
        "lost_frames": 0, "smoothed_err": 0.0}
@@ -89,8 +61,7 @@ def _log(msg):
         _log_fh.write(msg + "\n")
         _log_fh.flush()
 
-_log(f"V1 [3-ROI birdseye] camera={W}x{H} pitch={CAM_PITCH}deg height={CAM_HEIGHT}cm")
-_log(f"  PID kp={KP} ki={KI} kd={KD}  warp+3ROI")
+_log(f"V1 [warp+band-scan] camera={W}x{H}")
 
 while robot.step(TIMESTEP) != -1:
     if _start_t is None:

@@ -1,10 +1,10 @@
-"""auto-tune for v2 (parabola) — 和 v3 同样逻辑，读 v2 日志"""
+"""auto-tune for V1 — 搜 KP/KI/KD/STEER_SCALE"""
 import os, subprocess, sys, time, re
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 WORLD = os.path.join(REPO, "Webots", "worlds", "Robocup.wbt")
 WEBOTS = r"D:\Webots\msys64\mingw64\bin\webots.exe"
-LOG = os.path.join(REPO, "generated", "jetson_bridge_v2_log.txt")
+LOG = os.path.join(REPO, "generated", "jetson_bridge_v1_log.txt")
 RUN_SEC = 30
 
 PARAM_GRID = [
