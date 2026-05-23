@@ -638,11 +638,10 @@ class LineDetector:
                 candidates.sort(key=lambda x: x[0], reverse=True)
                 model = candidates[0][1]
                 dev_px, heading_deg = self._compute_dev_heading(model)
-                # 结构化置信度：几何 inlier × 边沿对质量三因子
+                # 置信度 = 视觉质量（V0 方式：hit_ratio × edge_quality × width_factor）
                 self._edge_stats = self._scan_edge_pairs(binary)
-                if self._edge_stats is not None:
-                    base = model["inlier_ratio"]
-                    conf = base * self._edge_stats["hit_ratio"] * \
+                if self._edge_stats is not None and self._edge_stats["valid_rows"] >= 5:
+                    conf = self._edge_stats["hit_ratio"] * \
                            self._edge_stats["edge_quality"] * self._edge_stats["width_factor"]
                     conf = clamp(conf, 0.10, 1.0)
                 else:
