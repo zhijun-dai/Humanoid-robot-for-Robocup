@@ -111,8 +111,9 @@ class LineDetector:
         cx = self.img_w / 2.0
         cy = self.img_h / 2.0
 
-        # ── 地面矩形: W = 赛道宽 × 1.5 (保证两条线都在) ──
-        W = self.track_width_cm * 1.5
+        # ── 地面矩形: 用远处可见宽度，保证赛道两条线都在 ──
+        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
+        W = ground_w_far * 0.8
 
         world_pts = np.float32([
             [W / 2, near], [-W / 2, near],   # near right, near left
@@ -144,8 +145,12 @@ class LineDetector:
         return cv2.getPerspectiveTransform(src, dst)
 
     def _compute_cm_per_px(self):
-        """鸟瞰图像素对应厘米数（和 IPM warp 同 W）。"""
-        W = self.track_width_cm * 1.5
+        """鸟瞰图像素对应厘米数（和 IPM warp 同公式：远处地面宽度）。"""
+        hfov_rad = 2 * np.arctan(
+            np.tan(np.radians(self.cam_vfov_deg / 2)) * self.img_w / self.img_h)
+        far = 80.0  # lookahead far
+        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
+        W = ground_w_far * 0.8
         return W / self.bird_w
 
     # ── 预处理 ──
