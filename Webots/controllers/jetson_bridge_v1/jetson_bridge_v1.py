@@ -28,13 +28,19 @@ def _env_or_cfg(key, default):
         return float(os.environ[env_key])
     return float(default)
 
+# 双模式 PID（直道/弯道）
 KP = _env_or_cfg("pid.straight.kp", 0.5)
 KI = _env_or_cfg("pid.straight.ki", 0.004)
 KD = _env_or_cfg("pid.straight.kd", 0.10)
+KP_C = _env_or_cfg("pid.curve.kp", 1.05)
+KI_C = _env_or_cfg("pid.curve.ki", 0.008)
+KD_C = _env_or_cfg("pid.curve.kd", 0.18)
+CURVE_SWITCH_DEG = 15.0   # heading 超过 15° 切弯道 PID
+RIGHT_TURN_SCALE = 0.65    # 右转不对称修正
 I_CLAMP = 60.0
 STEER_SAT = _env_or_cfg("steer.sat", 45.0)
 STEER_SCALE = _env_or_cfg("steer.scale", 0.9)
-BASE_SPEED = 3.2
+BASE_SPEED = 6.4
 STEER_W = 0.04
 MAX_SPEED = 6.28
 
@@ -46,7 +52,7 @@ left.setVelocity(0.0)
 right.setVelocity(0.0)
 
 pid = {"integral": 0.0, "last_err": 0.0, "last_steer": 0.0,
-       "lost_frames": 0, "smoothed_err": 0.0}
+       "lost_frames": 0, "smoothed_err": 0.0, "curve_mode": 0}
 _start_t = None
 
 _log_fh = None
@@ -103,8 +109,18 @@ while robot.step(TIMESTEP) != -1:
         derr = (pid["smoothed_err"] - pid["last_err"]) / max(dt, 1e-3)
         pid["last_err"] = pid["smoothed_err"]
 
-        pid_out = KP * pid["smoothed_err"] + KI * pid["integral"] + KD * derr
+        # 双模式 PID：弯道时切更高 KP/KD（旧代码逻辑）
+        curve_mode = abs(heading_deg) >= CURVE_SWITCH_DEG
+        pid["curve_mode"] = int(curve_mode)
+        if curve_mode:
+            kp_e, ki_e, kd_e = KP_C, KI_C, KD_C
+        else:
+            kp_e, ki_e, kd_e = KP, KI, KD
+
+        pid_out = kp_e * pid["smoothed_err"] + ki_e * pid["integral"] + kd_e * derr
         steer = STEER_SAT * math.tanh(pid_out / STEER_SCALE)
+        if steer < 0.0:
+            steer *= RIGHT_TURN_SCALE  # 右转不对称修正（旧代码逻辑）
 
         max_ds = 14.0 * dt * 30
         ds = steer - pid["last_steer"]
@@ -131,7 +147,7 @@ while robot.step(TIMESTEP) != -1:
 
     t = robot.getTime()
     if int(t * 4) != int((t - TIMESTEP / 1000.0) * 4):
-        _log(f"t={t:.1f}s steer={steer:.1f} dev={dev_px}px head={heading_deg}deg conf={conf:.2f} err={fused_err:.2f}")
+        _log(f"t={t:.1f}s steer={steer:.1f} dev={dev_px}px head={heading_deg}deg conf={conf:.2f} err={fused_err:.2f} curve={pid['curve_mode']}")
 
     if t - (_start_t or 0) > MAX_SEC:
         _log(f"Done. {t:.1f}s elapsed.")
