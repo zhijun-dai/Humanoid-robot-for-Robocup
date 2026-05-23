@@ -93,7 +93,7 @@ class LineDetector:
         self.z_per_px = (80.0 - 10.0) / float(self.bird_h - 1)  # vertical cm per px
 
         # ── Threshold params ──
-        self.th_offset = 8
+        self.th_offset = -8
         self.th_min = 25
         self.th_max = 120
         self.dark_margin = 12
@@ -1119,7 +1119,13 @@ class LineDetector:
         )
 
         # ── Debug info ──
+        _, binary_raw = cv2.threshold(gray, black_th, 255, cv2.THRESH_BINARY)
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        binary_closed = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k3, iterations=1)
         debug = {
+            "bird": gray,
+            "binary_raw": binary_raw,
+            "binary": binary_closed,
             "black_th": black_th,
             "track_is_dark": track_is_dark,
             "base_err_px": base_err_px,
