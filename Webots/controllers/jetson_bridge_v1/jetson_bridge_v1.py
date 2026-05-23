@@ -119,8 +119,6 @@ while robot.step(TIMESTEP) != -1:
 
         pid_out = kp_e * pid["smoothed_err"] + ki_e * pid["integral"] + kd_e * derr
         steer = STEER_SAT * math.tanh(pid_out / STEER_SCALE)
-        if steer < 0.0:
-            steer *= RIGHT_TURN_SCALE  # 右转不对称修正（旧代码逻辑）
 
         max_ds = 14.0 * dt * 30
         ds = steer - pid["last_steer"]
