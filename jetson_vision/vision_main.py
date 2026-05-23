@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from qr_detector import QRDetector
-from line_detector import LineDetector
+from line_detector_v1_warp import LineDetector
 
 
 # ── 可调参数 ──
@@ -34,13 +34,8 @@ def main():
     # 检测器
     qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
                     min_edge_px=20, max_edge_px=400, debug=False)
-    # USB 摄像头标定数据 (320x240 标定，自动缩放到当前分辨率)
-    _K = [[291.47, 0, 164.09], [0, 293.80, 125.94], [0, 0, 1]]
-    _dist = [-0.4206, 0.06435, 0.000381, 0.00061, 0.2893]
-    ld = LineDetector(cam_height_cm=40.0, cam_pitch_deg=45.0,
-                      cam_w=actual_w, cam_h=actual_h,
-                      track_width_cm=35.5, inner_radius_cm=59.75, outer_radius_cm=95.25,
-                      K=_K, dist=_dist, calib_w=320, calib_h=240)
+    ld = LineDetector(cam_w=actual_w, cam_h=actual_h,
+                      cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=44.0)
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
     print("  巡线: 几何原语拟合 (平行线 / 同心圆)")

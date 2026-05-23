@@ -74,12 +74,12 @@ def line_fit(ys, xs):
 # ═══════════════════════════════════════════════════════════════════════
 
 class LineDetector:
-    def __init__(self, cam_w=320, cam_h=240, cam_height_cm=38, cam_vfov_deg=43.6):
+    def __init__(self, cam_w=320, cam_h=240, cam_height_cm=38, cam_pitch_deg=45.0, cam_vfov_deg=43.6):
         # ── Camera params ──
         self.cam_w = int(cam_w)
         self.cam_h = int(cam_h)
         self.cam_height = float(cam_height_cm)
-        self.cam_pitch = np.radians(30.0)  # fixed default
+        self.cam_pitch = np.radians(cam_pitch_deg)
         self.cam_vfov_deg = float(cam_vfov_deg)
 
         # ── Birdseye ──
@@ -268,12 +268,13 @@ class LineDetector:
         return cv2.getPerspectiveTransform(src, dst)
 
     def _compute_cm_per_px(self):
-        """Horizontal cm per pixel at lookahead midpoint (uniform on birdseye)."""
-        hfov = 2 * np.arctan(
+        """Horizontal cm per pixel (同 _build_birdseye_matrix 的 W 公式)"""
+        hfov_rad = 2 * np.arctan(
             np.tan(np.radians(self.cam_vfov_deg / 2)) * self.cam_w / self.cam_h)
-        lookahead_mid = 45.0  # ~ (10+80)/2
-        ground_width = 2 * lookahead_mid * np.tan(hfov / 2)
-        return ground_width / self.bird_w
+        far = 80.0
+        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
+        W = ground_w_far * 0.7
+        return W / self.bird_w
 
     def _px_to_ground_cm(self, x, y):
         """Convert birdseye pixel (x, y) to ground cm.
