@@ -61,6 +61,7 @@ class LineDetector:
             self._dist = np.array(dist, dtype=np.float32)
 
         self.M = self._build_birdseye_matrix(lookahead_cm)
+        self._lookahead_near = lookahead_cm[0]
         self._center_x = bird_w // 2
 
         # 赛道几何 (cm → px)
@@ -112,8 +113,8 @@ class LineDetector:
         cy = self.img_h / 2.0
 
         # ── 地面矩形四角: 在地平面上，hFOV 对应的水平宽度 = 2*z*tan(hfov/2) ──
-        ground_w_near = 2.0 * near * np.tan(hfov_rad / 2.0)
-        W = ground_w_near * 0.85  # 近处地面可见宽度，留 15% 边距
+        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
+        W = ground_w_far * 0.7  # 远处地面更宽，确保赛道两条线都在视野内
 
         world_pts = np.float32([
             [W / 2, near], [-W / 2, near],   # near right, near left
@@ -143,12 +144,12 @@ class LineDetector:
         return cv2.getPerspectiveTransform(src, dst)
 
     def _compute_cm_per_px(self):
-        """鸟瞰图水平方向每像素对应厘米数（在 lookahead 中点估算）。"""
-        hfov = 2 * np.arctan(
+        """鸟瞰图像素对应厘米数（和 IPM warp 同公式）。"""
+        hfov_rad = 2 * np.arctan(
             np.tan(np.radians(self.cam_vfov_deg / 2)) * self.img_w / self.img_h)
-        lookahead_mid = 45.0  # ~ (10+80)/2
-        ground_width = 2 * lookahead_mid * np.tan(hfov / 2)
-        return ground_width / self.bird_w
+        ground_w_near = 2.0 * max(self._lookahead_near, 20.0) * np.tan(hfov_rad / 2.0)
+        W = ground_w_near * 0.85  # 同 _build_birdseye_matrix
+        return W / self.bird_w
 
     # ── 预处理 ──
     def _preprocess(self, bgr):
@@ -259,6 +260,9 @@ class LineDetector:
             dx = p2[0] - p1[0]
             dy = p2[1] - p1[1]
             if abs(dx) < 0.5 and abs(dy) < 0.5:
+                continue
+            # 拒绝：同一条竖线上的点 dx≤15, 跨线对 dx≈118
+            if abs(dx) > 30:
                 continue
             a = -dy
             b = dx
