@@ -90,8 +90,8 @@ class LineDetector:
         fy = self.img_h / (2.0 * np.tan(vfov_rad / 2.0))
         cx, cy = self.img_w / 2.0, self.img_h / 2.0
 
-        ground_w_near = 2.0 * near * np.tan(hfov_rad / 2.0)
-        W = ground_w_near * 0.85
+        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
+        W = ground_w_far * 0.7
 
         world_pts = np.float32([
             [W / 2, near], [-W / 2, near],
