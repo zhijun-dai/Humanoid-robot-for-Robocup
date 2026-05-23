@@ -164,8 +164,8 @@ class LineDetector:
         th_val = clamp(th_val + self.th_offset, 30, 200)
         _, binary_raw = cv2.threshold(bird, th_val, 255, cv2.THRESH_BINARY)
 
-        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        binary = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k5, iterations=2)
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        binary = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k3, iterations=1)
 
         # 提取黑色边缘像素坐标 (x, y)
         ys, xs = np.where(binary == 0)
