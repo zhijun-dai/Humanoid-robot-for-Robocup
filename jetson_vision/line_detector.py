@@ -60,14 +60,13 @@ class LineDetector:
             self._K = K_scaled
             self._dist = np.array(dist, dtype=np.float32)
 
-        self.M = self._build_birdseye_matrix(lookahead_cm)
-        self._lookahead_near = lookahead_cm[0]
-        self._center_x = bird_w // 2
-
-        # 赛道几何 (cm → px)
+        # 赛道几何 (必须在 _build_birdseye_matrix 之前)
         self.track_width_cm = track_width_cm
         self.inner_radius_cm = inner_radius_cm
         self.outer_radius_cm = outer_radius_cm
+
+        self.M = self._build_birdseye_matrix(lookahead_cm)
+        self._center_x = bird_w // 2
         self.cm_per_px = self._compute_cm_per_px()
         self.track_width_px = track_width_cm / self.cm_per_px
         self.inner_radius_px = (inner_radius_cm / self.cm_per_px
@@ -112,9 +111,8 @@ class LineDetector:
         cx = self.img_w / 2.0
         cy = self.img_h / 2.0
 
-        # ── 地面矩形四角: 在地平面上，hFOV 对应的水平宽度 = 2*z*tan(hfov/2) ──
-        ground_w_far = 2.0 * far * np.tan(hfov_rad / 2.0)
-        W = ground_w_far * 0.7  # 远处地面更宽，确保赛道两条线都在视野内
+        # ── 地面矩形: W = 赛道宽 × 1.5 (保证两条线都在) ──
+        W = self.track_width_cm * 1.5
 
         world_pts = np.float32([
             [W / 2, near], [-W / 2, near],   # near right, near left
@@ -134,7 +132,9 @@ class LineDetector:
             u = fx * Xc / Zc + cx
             v = fy_calc * Yc / Zc + cy
             src_pts.append([u, v])
-        src = np.float32(src_pts)
+        # 钳到画面边缘防黑三角（近处角可能溢出）
+        src = np.float32([[clamp(p[0], 0, self.img_w-1),
+                           clamp(p[1], 0, self.img_h-1)] for p in src_pts])
 
         # ── dst 矩形 (标准: 近=下, 远=上) ──
         dst = np.float32([
@@ -144,11 +144,8 @@ class LineDetector:
         return cv2.getPerspectiveTransform(src, dst)
 
     def _compute_cm_per_px(self):
-        """鸟瞰图像素对应厘米数（和 IPM warp 同公式）。"""
-        hfov_rad = 2 * np.arctan(
-            np.tan(np.radians(self.cam_vfov_deg / 2)) * self.img_w / self.img_h)
-        ground_w_near = 2.0 * max(self._lookahead_near, 20.0) * np.tan(hfov_rad / 2.0)
-        W = ground_w_near * 0.85  # 同 _build_birdseye_matrix
+        """鸟瞰图像素对应厘米数（和 IPM warp 同 W）。"""
+        W = self.track_width_cm * 1.5
         return W / self.bird_w
 
     # ── 预处理 ──
