@@ -257,7 +257,8 @@ class LineDetector:
             u = fx * Xc / Zc + cx
             v = fy_calc * Yc / Zc + cy
             src_pts.append([u, v])
-        src = np.float32(src_pts)
+        src = np.float32([[clamp(p[0], 0, self.cam_w-1),
+                           clamp(p[1], 0, self.cam_h-1)] for p in src_pts])
 
         # dst rectangle (near=bottom, far=top)
         dst = np.float32([

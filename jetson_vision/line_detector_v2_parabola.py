@@ -106,7 +106,8 @@ class LineDetector:
             if Zc < 0.01:
                 Zc = 0.01
             src_pts.append([fx * Xc / Zc + cx, fy * Yc / Zc + cy])
-        src = np.float32(src_pts)
+        src = np.float32([[clamp(p[0], 0, self.img_w-1),
+                           clamp(p[1], 0, self.img_h-1)] for p in src_pts])
 
         dst = np.float32([
             [self.bird_w - 1, self.bird_h - 1], [0, self.bird_h - 1],
