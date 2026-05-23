@@ -5,7 +5,12 @@
 中线直接从几何关系计算，不需逐行采样近似。
 """
 import cv2
+import math
 import numpy as np
+
+SHAKE_RMS_TRIGGER_PX = 6.0
+SHAKE_DECAY_FRAMES = 8
+SHAKE_ALPHA_HIGH = 0.88
 
 
 def clamp(v, lo, hi):
@@ -82,6 +87,11 @@ class LineDetector:
 
         # 结构化置信度缓存
         self._edge_stats = None
+
+        # 晃动检测（在检测器内部）
+        self._near_err_history = []
+        self._shake_active = 0
+        self._shake_rms = 0.0
 
     # ── 鸟瞰变换 ──
     def _build_birdseye_matrix(self, lookahead):
@@ -534,7 +544,9 @@ class LineDetector:
                     for j_idx in range(i_idx + 1, len(runs)):
                         c2 = (runs[j_idx][0] + runs[j_idx][1]) * 0.5
                         dd = abs(c2 - c1)
-                        err = abs(dd - track_w)
+                        centers_avg = (c1 + c2) * 0.5
+                        center_err = abs(centers_avg - self._center_x)
+                        err = abs(dd - track_w) + 0.7 * center_err
                         if err < best_err:
                             best_err = err
                             best_dist = dd
@@ -588,8 +600,13 @@ class LineDetector:
 
         # ── 底部对称锁定 ──
         lock = self._bottom_lock_check(binary)
+        prev_bl_valid = getattr(self, '_bottom_lock_valid', False)
         self._bottom_lock_valid = lock["valid"]
         self._bottom_lock_center = lock["center_px"]
+        # 重捕获重置：底部锁从不 valid 变 valid 时清平滑状态
+        if self._bottom_lock_valid and not prev_bl_valid:
+            self._prev_dev = None
+            self._prev_heading = 0.0
 
         # 默认值
         dev_px = None
@@ -637,6 +654,21 @@ class LineDetector:
                     lock_dev = self._bottom_lock_center - self._center_x
                     dev_px = (1.0 - BOTTOM_LOCK_BLEND) * dev_px + BOTTOM_LOCK_BLEND * lock_dev
 
+        # ── 晃动检测（检测器内部，跟踪 raw dev 帧间 RMS）──
+        if dev_px is not None:
+            hist = self._near_err_history
+            hist.append(float(dev_px))
+            if len(hist) > 6:
+                del hist[0]
+            if len(hist) >= 3:
+                diffs = [hist[i] - hist[i - 1] for i in range(1, len(hist))]
+                rms = math.sqrt(sum(d * d for d in diffs) / len(diffs))
+                self._shake_rms = rms
+                if rms >= SHAKE_RMS_TRIGGER_PX:
+                    self._shake_active = SHAKE_DECAY_FRAMES
+                elif self._shake_active > 0:
+                    self._shake_active -= 1
+
         # ── 时序平滑 + 跳变拒绝 ──
         if dev_px is not None and model is not None:
             if self._prev_dev is not None:
@@ -656,6 +688,8 @@ class LineDetector:
                         alpha = 0.40
                     else:
                         alpha = 0.65
+                    if self._shake_active > 0:
+                        alpha = max(alpha, SHAKE_ALPHA_HIGH)
                     dev_px = alpha * dev_px + (1 - alpha) * self._prev_dev
                     heading_deg = alpha * heading_deg + (1 - alpha) * self._prev_heading
             self._prev_dev = dev_px
@@ -737,6 +771,8 @@ class LineDetector:
             "model_type": model["model"] if model else None,
             "inlier_ratio": model["inlier_ratio"] if model else 0.0,
             "heading_deg": heading_deg,
+            "shake_active": self._shake_active,
+            "shake_rms": self._shake_rms,
             "_bottom_lock_valid": self._bottom_lock_valid,
             "edge_hit_ratio": self._edge_stats["hit_ratio"] if self._edge_stats else 0.0,
             "edge_quality": self._edge_stats["edge_quality"] if self._edge_stats else 0.0,
