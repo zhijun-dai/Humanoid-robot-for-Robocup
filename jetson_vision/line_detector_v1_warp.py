@@ -107,7 +107,7 @@ class LineDetector:
         self.width_std_max = 14
         self.conf_min = 0.12
         self.min_line_width = 2
-        self.max_line_width = 80
+        self.max_line_width = 60   # 鸟瞰图 160px 宽, 横黑线 >60px 丢弃
         self.lane_width_init_px = 70.0
         self.lane_width_tol_px = 40.0
         self.max_center_jump_px = 55.0
@@ -147,8 +147,8 @@ class LineDetector:
         self.band_weight_up = 0.12
 
         # ── Obstacle detection ──
-        self.cross_black_run_ratio = 0.42
-        self.cross_black_cover_ratio = 0.56
+        self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
+        self.cross_black_cover_ratio = 0.20
         self.red_detect_enable = True
         self.red_min_r = 105
         self.red_dom_margin = 28
