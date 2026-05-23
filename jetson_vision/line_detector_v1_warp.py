@@ -180,10 +180,10 @@ class LineDetector:
         self.angle_gain = 0.22
         self.min_weight = 0.10
 
-        # ── Pixel domain gains ──
-        self.pix_lookahead_gain = 0.0
-        self.pix_curve_gain = 0.0
-        self.pix_angle_gain = 0.06
+        # ── Pixel domain gains（对齐旧代码 cm 域增益）──
+        self.pix_lookahead_gain = 0.35   # far band 前瞻权重 (旧: LOOKAHEAD_GAIN=0.35)
+        self.pix_curve_gain = 0.25       # 弯道偏差权重 (旧: CURVE_GAIN=0.25)
+        self.pix_angle_gain = 0.22       # 朝向角权重 (旧: ANGLE_GAIN=0.22)
         self.curve_switch_px = 18.0
         self.left_curve_outward_gain = 0.35
         self.left_curve_outward_px = 6.0
@@ -1067,9 +1067,13 @@ class LineDetector:
             far_norm = far_err_px / max(0.5 * img_w, 1.0)
             curve_norm = curve_px / max(0.5 * img_w, 1.0)
 
+            # Dynamic lookahead (弯道时增强前瞻)
+            turn_gate = clamp(abs(curve_px) / max(self.curve_switch_px, 1.0), 0.0, 1.0)
+            lookahead_dyn = self.pix_lookahead_gain * (0.70 + 0.90 * turn_gate)
+
             # Pixel-domain error fusion
             fused_err = -near_norm
-            fused_err += self.pix_lookahead_gain * (-far_norm)
+            fused_err += lookahead_dyn * (-far_norm)
             fused_err += self.pix_curve_gain * (-curve_norm)
             fused_err += self.pix_angle_gain * (-angle_err / 45.0)
             if curve_px < -self.left_curve_outward_px:
