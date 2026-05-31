@@ -87,6 +87,13 @@ while robot.step(TIMESTEP) != -1:
     LOST_HOLD = 6
     LOST_SEARCH = 26.0
 
+    # 重捕获重置：底部锁从不 valid 变 valid 时清积分（对齐旧代码逻辑）
+    bl_valid = dbg.get("bottom_lock_valid", False)
+    if bl_valid and not pid.get("last_bl_valid", False):
+        pid["integral"] = 0.0
+        pid["last_err"] = 0.0
+    pid["last_bl_valid"] = bl_valid
+
     if dev_px is not None and conf > 0.08:
         pid["lost_frames"] = 0
         dt = TIMESTEP / 1000.0
