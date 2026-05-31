@@ -1110,6 +1110,8 @@ class LineDetector:
             far_dist_cm = state["last_far_dist"]
             avg_conf = 0.0
             band_mask = state["last_band_mask"]
+            fused_err = 0.0
+            state["smoothed_err"] *= 0.90
 
         # ── Output ──
         dev_px = base_err_px
@@ -1149,9 +1151,13 @@ class LineDetector:
             "diff_rms_px": state["diff_rms_px"],
             "shake_active_frames": state["shake_active_frames"],
             "n_roi_results": len(roi_results),
+            "smoothed_err": state["smoothed_err"],
+            "fused_err": fused_err,
+            "curve_mode": int(abs(curve_norm) >= self.pix_curve_gain * 0.5) if roi_results else 0,
         }
 
-        return dev_px, heading_deg, conf, vis, debug
+        # 返回 pre-smoothed error 给控制器直接用
+        return state["smoothed_err"], heading_deg, conf, vis, debug
 
     # ═══════════════════════════════════════════════════════════
     # Visualization (on birdseye)

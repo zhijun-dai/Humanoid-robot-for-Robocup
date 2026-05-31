@@ -35,8 +35,7 @@ KD = _env_or_cfg("pid.straight.kd", 0.10)
 KP_C = _env_or_cfg("pid.curve.kp", 1.05)
 KI_C = _env_or_cfg("pid.curve.ki", 0.008)
 KD_C = _env_or_cfg("pid.curve.kd", 0.18)
-CURVE_SWITCH_DEG = 15.0   # heading 超过 15° 切弯道 PID
-RIGHT_TURN_SCALE = 0.65    # 右转不对称修正
+# CURVE_SWITCH 已移至检测器, 控制器用 dbg["curve_mode"]
 I_CLAMP = 60.0
 STEER_SAT = _env_or_cfg("steer.sat", 45.0)
 STEER_SCALE = _env_or_cfg("steer.scale", 0.9)
@@ -80,51 +79,44 @@ while robot.step(TIMESTEP) != -1:
     buf = np.frombuffer(raw, dtype=np.uint8).reshape(H, W, 4)
     bgr = cv2.cvtColor(buf, cv2.COLOR_BGRA2BGR)
 
-    dev_px, heading_deg, conf, vis, dbg = ld.process(bgr)
+    smoothed_err, heading_deg, conf, vis, dbg = ld.process(bgr)
 
     steer = 0.0
-    fused_err = 0.0
     LOST_HOLD = 6
     LOST_SEARCH = 26.0
 
-    # 重捕获重置：底部锁从不 valid 变 valid 时清积分（对齐旧代码逻辑）
+    # 重捕获重置
     bl_valid = dbg.get("bottom_lock_valid", False)
     if bl_valid and not pid.get("last_bl_valid", False):
         pid["integral"] = 0.0
         pid["last_err"] = 0.0
     pid["last_bl_valid"] = bl_valid
 
-    if dev_px is not None and conf > 0.08:
+    if smoothed_err is not None and conf > 0.08:
         pid["lost_frames"] = 0
         dt = TIMESTEP / 1000.0
 
-        near_norm = dev_px / 80.0
-        fused_err = -near_norm
-        if abs(heading_deg) < 15:
-            fused_err += 0.015 * (-heading_deg / 45.0)
-
-        SMOOTH_ALPHA = 0.75 if conf > 0.4 else 0.88
-        pid["smoothed_err"] = SMOOTH_ALPHA * pid["smoothed_err"] + (1.0 - SMOOTH_ALPHA) * fused_err
+        # 检测器输出已融合+平滑: near+far+curve+angle → fused → EMA
 
         if abs(pid["last_steer"]) < STEER_SAT * 0.8:
-            pid["integral"] += pid["smoothed_err"] * dt
+            pid["integral"] += smoothed_err * dt
         pid["integral"] = max(-I_CLAMP, min(I_CLAMP, pid["integral"]))
 
         if conf < 0.25:
             pid["integral"] *= 0.85
 
-        derr = (pid["smoothed_err"] - pid["last_err"]) / max(dt, 1e-3)
-        pid["last_err"] = pid["smoothed_err"]
+        derr = (smoothed_err - pid["last_err"]) / max(dt, 1e-3)
+        pid["last_err"] = smoothed_err
 
-        # 双模式 PID：弯道时切更高 KP/KD（旧代码逻辑）
-        curve_mode = abs(heading_deg) >= CURVE_SWITCH_DEG
+        # 双模式 PID：用检测器输出的 curve_mode
+        curve_mode = dbg.get("curve_mode", 0)
         pid["curve_mode"] = int(curve_mode)
         if curve_mode:
             kp_e, ki_e, kd_e = KP_C, KI_C, KD_C
         else:
             kp_e, ki_e, kd_e = KP, KI, KD
 
-        pid_out = kp_e * pid["smoothed_err"] + ki_e * pid["integral"] + kd_e * derr
+        pid_out = kp_e * smoothed_err + ki_e * pid["integral"] + kd_e * derr
         steer = STEER_SAT * math.tanh(pid_out / STEER_SCALE)
 
         max_ds = 14.0 * dt * 30
@@ -140,7 +132,7 @@ while robot.step(TIMESTEP) != -1:
             phase = (lost_n // 8) % 2
             steer = LOST_SEARCH if phase == 0 else -LOST_SEARCH
             pid["integral"] *= 0.5
-        pid["smoothed_err"] *= 0.9
+        smoothed_err = smoothed_err * 0.9 if smoothed_err else 0.0
     pid["last_steer"] = steer
 
     speed_scale = 1.0 if conf > 0.3 else (0.75 if conf > 0.1 else 0.6)
@@ -152,7 +144,7 @@ while robot.step(TIMESTEP) != -1:
 
     t = robot.getTime()
     if int(t * 4) != int((t - TIMESTEP / 1000.0) * 4):
-        _log(f"t={t:.1f}s steer={steer:.1f} dev={dev_px}px head={heading_deg}deg conf={conf:.2f} err={fused_err:.2f} curve={pid['curve_mode']}")
+        _log(f"t={t:.1f}s steer={steer:.1f} err={smoothed_err:.3f} head={heading_deg}deg conf={conf:.2f} curve={pid['curve_mode']}")
 
     if t - (_start_t or 0) > MAX_SEC:
         _log(f"Done. {t:.1f}s elapsed.")
