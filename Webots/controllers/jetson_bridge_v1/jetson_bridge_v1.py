@@ -27,6 +27,9 @@ import cv2
 # ---- Path setup ----
 _CTRL_DIR = os.path.dirname(os.path.abspath(__file__))
 _JETSON_DIR = os.path.abspath(os.path.join(_CTRL_DIR, "..", "..", "..", "jetson_vision"))
+_V1_DIR = os.path.join(_JETSON_DIR, "v1_production")
+if _V1_DIR not in sys.path:
+    sys.path.insert(0, _V1_DIR)
 if _JETSON_DIR not in sys.path:
     sys.path.insert(0, _JETSON_DIR)
 

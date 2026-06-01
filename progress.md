@@ -39,7 +39,7 @@
 
 ## 未完成 / 需在代码与场地验证
 
-- [ ] Windows USB 摄像头 QR 距离测试
+- [x] Windows USB 摄像头 QR 距离测试
 - [ ] Jetson Nano 相机标定、巡线、串口联调
 - [ ] 真场 QR 测试（OpenMV 保底）
 - [ ] 红色障碍检测：真机是否切 RGB565？（当前灰度下关闭）
