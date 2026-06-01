@@ -938,6 +938,10 @@ class LineDetector:
         bottom_sym_err_px = 0.0
         center_lock_quality = 1.0
         bottom_lock_valid = True
+        near_err_px_pre_lock = 0.0
+        far_err_px_saved = 0.0
+        curve_px = 0.0
+        turn_gate = 0.0
 
         # ── Bottom center lock ──
         bottom_lock = self._detect_bottom_center_lock(
@@ -991,6 +995,7 @@ class LineDetector:
             far_err_cm = far["center_cm"]
             near_err_px = near["center_px"] - img_cx
             far_err_px = far["center_px"] - img_cx
+            far_err_px_saved = far_err_px  # raw far error for controller (pre-assist)
 
             # If near band missing (only mid/up visible), blend with history
             if str(near.get("band_name", "")) != "down":
@@ -998,6 +1003,7 @@ class LineDetector:
                 near_err_px = 0.68 * near_err_px + 0.32 * (
                     state["last_lane_center_x"] - img_cx
                 )
+            near_err_px_pre_lock = near_err_px  # after historic blend, before lock fusion
 
             # Shake robust layer
             shake_active = self.robust_enable and (state["shake_active_frames"] > 0)
@@ -1110,8 +1116,6 @@ class LineDetector:
             far_dist_cm = state["last_far_dist"]
             avg_conf = 0.0
             band_mask = state["last_band_mask"]
-            fused_err = 0.0
-            state["smoothed_err"] *= 0.90
 
         # ── Output ──
         dev_px = base_err_px
@@ -1151,13 +1155,13 @@ class LineDetector:
             "diff_rms_px": state["diff_rms_px"],
             "shake_active_frames": state["shake_active_frames"],
             "n_roi_results": len(roi_results),
-            "smoothed_err": state["smoothed_err"],
-            "fused_err": fused_err,
-            "curve_mode": int(abs(curve_norm) >= self.pix_curve_gain * 0.5) if roi_results else 0,
+            "near_err_px": near_err_px_pre_lock,
+            "far_err_px": far_err_px_saved,
+            "curve_px": curve_px,
+            "turn_gate": turn_gate,
         }
 
-        # 返回 pre-smoothed error 给控制器直接用
-        return state["smoothed_err"], heading_deg, conf, vis, debug
+        return dev_px, heading_deg, conf, vis, debug
 
     # ═══════════════════════════════════════════════════════════
     # Visualization (on birdseye)
