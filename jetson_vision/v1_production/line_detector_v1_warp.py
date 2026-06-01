@@ -1089,6 +1089,15 @@ class LineDetector:
                 alpha_eff * state["smoothed_err"] + (1.0 - alpha_eff) * fused_err
             )
 
+            # Curve mode detection (for dual-mode PID)
+            _cm = abs(curve_px) >= self.curve_switch_px
+            if LineDetector._single_band_mask(band_mask):
+                _cm = _cm or abs(angle_err) >= 8.0
+            if ((not bottom_lock_valid) and bottom_pair_ratio > 0.0
+                    and abs(bottom_sym_err_px) > self.bottom_lock_sym_tol_px):
+                _cm = True
+            curve_mode = _cm
+
             # Shake diff RMS tracking
             hist = state["near_err_history"]
             hist.append(float(near_err_px))
@@ -1116,6 +1125,7 @@ class LineDetector:
             far_dist_cm = state["last_far_dist"]
             avg_conf = 0.0
             band_mask = state["last_band_mask"]
+            curve_mode = False
 
         # ── Output ──
         dev_px = base_err_px
@@ -1159,6 +1169,8 @@ class LineDetector:
             "far_err_px": far_err_px_saved,
             "curve_px": curve_px,
             "turn_gate": turn_gate,
+            "fused_err": state["smoothed_err"],
+            "curve_mode": curve_mode,
         }
 
         return dev_px, heading_deg, conf, vis, debug
