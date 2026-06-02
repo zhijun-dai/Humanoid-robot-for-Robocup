@@ -100,14 +100,13 @@ def _serial_close():
             pass
         _ser = None
 
-def _serial_send(fl, fr, rl, rr):
-    """Send wheel speeds to MCU. Returns True on success."""
+def _serial_send(frame: bytes):
+    """Send binary frame to MCU. Returns True on success."""
     global _ser, SERIAL_ENABLED
     if not SERIAL_ENABLED or _ser is None:
         return False
     try:
-        msg = "FL:%.2f FR:%.2f RL:%.2f RR:%.2f\n" % (fl, fr, rl, rr)
-        _ser.write(msg.encode("ascii"))
+        _ser.write(frame)
         return True
     except Exception as e:
         print(f"[serial] write error: {e}")
@@ -227,10 +226,17 @@ def main():
         rl = fl
         rr = fr
 
-        # ── Serial output (~10 Hz) ──
+        # ── Serial output (~10 Hz), binary protocol ──
         if t - last_serial_t >= 0.1:
             last_serial_t = t
-            _serial_send(fl, fr, rl, rr)
+            # rad/s → int8_t: ×10, clamp [-127,127], 0=stop, 正=forward
+            def _rad2byte(v):
+                return max(-127, min(127, int(v * 10.0))) & 0xFF
+            frame = bytes([0xFF,
+                           _rad2byte(fr), _rad2byte(fl),
+                           _rad2byte(rr), _rad2byte(rl),
+                           0xEE])
+            _serial_send(frame)
 
         # ── Console log ──
         if t - last_print_t > PRINT_INTERVAL:
