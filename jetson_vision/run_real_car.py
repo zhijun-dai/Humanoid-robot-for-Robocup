@@ -238,13 +238,12 @@ def main():
                            0xEE])
             _serial_send(frame)
 
-        # ── Console log ──
-        if t - last_print_t > PRINT_INTERVAL:
+        # ── Console: 打印串口帧（10Hz） ──
+        if t - last_print_t > PRINT_INTERVAL and t - last_serial_t < 0.15:
             last_print_t = t
-            elapsed = t - t0
-            print(f"t={elapsed:.1f} steer={steer:+6.2f} err={err:+6.3f} "
-                  f"curve={1 if curve else 0} lost={lost} conf={conf:.2f} "
-                  f"spd={spd:.1f} | FL={fl:+6.2f} FR={fr:+6.2f} RL={rl:+6.2f} RR={rr:+6.2f}")
+            print(f"[{t-t0:.1f}s] "
+                  f"{frame[0]:02X} {frame[1]:02X} {frame[2]:02X} {frame[3]:02X} {frame[4]:02X} {frame[5]:02X}  "
+                  f"FL={fl:+5.1f} FR={fr:+5.1f} RL={rl:+5.1f} RR={rr:+5.1f} rad/s")
 
         # ── Display ──
         # Build overlay on the vis image returned by detector
