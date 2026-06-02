@@ -14,7 +14,7 @@ from line_detector_v1_warp import LineDetector
 
 
 # ── 可调参数 ──
-CAM_IDX = 0          # 0=内置 1=USB（不确定就试）
+CAM_IDX = 1          # 0=内置 1=USB（不确定就试）
 CAM_W = 1280
 CAM_H = 720
 COOLDOWN_MS = 2000
@@ -36,7 +36,7 @@ def main():
     qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
                     min_edge_px=20, max_edge_px=400, debug=False)
     ld = LineDetector(cam_w=actual_w, cam_h=actual_h,
-                      cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=44.0)
+                      cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=44.4)
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
     print("  巡线: 几何原语拟合 (平行线 / 同心圆)")
