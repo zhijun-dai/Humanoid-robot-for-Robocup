@@ -241,9 +241,7 @@ def main():
         # ── Console: 打印串口帧（10Hz） ──
         if t - last_print_t > PRINT_INTERVAL and t - last_serial_t < 0.15:
             last_print_t = t
-            print(f"[{t-t0:.1f}s] "
-                  f"{frame[0]:02X} {frame[1]:02X} {frame[2]:02X} {frame[3]:02X} {frame[4]:02X} {frame[5]:02X}  "
-                  f"FL={fl:+5.1f} FR={fr:+5.1f} RL={rl:+5.1f} RR={rr:+5.1f} rad/s")
+            print(f"{frame[0]:02X}{frame[1]:02X}{frame[2]:02X}{frame[3]:02X}{frame[4]:02X}{frame[5]:02X}")
 
         # ── Display ──
         # Build overlay on the vis image returned by detector
