@@ -8,6 +8,7 @@ import os
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "v1_production"))
 from qr_detector import QRDetector
 from line_detector_v1_warp import LineDetector
 
