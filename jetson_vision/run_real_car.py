@@ -163,6 +163,9 @@ def main():
           f"max_sec={MAX_SEC:.0f}")
     print("Keys: 'q'=quit  's'=toggle serial")
 
+    # 启动时自动打开串口
+    _serial_open()
+
     while True:
         t = time.time()
         if t0 is None:
