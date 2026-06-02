@@ -77,7 +77,7 @@ STEER_SAT=45 是方向盘最大值。STEER_SCALE=1.0 控制"膝点"位置——�
 
 每帧方向盘变化不能超过 14 个单位（防止突变）。
 
-### 6. 差速驱动
+### 6. 差速驱动（仿真）
 
 左右轮不同速度实现转弯。向右转 = 左轮快、右轮慢。
 
@@ -88,6 +88,22 @@ right_speed = base_speed + delta
 ```
 
 STEER_W=0.04 把 steer 量纲换算成电机速度差。delta 被限制在 [-2.8, 2.8] 防止一边轮子倒转。
+
+### 6b. 四轮差速（真车 2025-06-02）
+
+真车参数：轮半径 3cm，半轴长 7.9cm（左右轮距 15.8cm），轴距 8cm。四轮差速，同侧前后轮同速。
+
+```
+curvature = steer × CURVE_COEF         （CURVE_COEF 需实车标定，建议值 0.003~0.01）
+ω = speed × curvature                  （转向角速度 rad/s）
+v_right = speed + ω × 7.9              （右轮线速度 cm/s）
+v_left  = speed - ω × 7.9              （左轮线速度 cm/s）
+
+右前 = 右后 = v_right / 3.0            （rad/s）
+左前 = 左后 = v_left  / 3.0
+```
+
+单位 rad/s，四个值直接发给底盘。标定方法：让 `steer=10`、`speed=10` 跑一圈，测实际转弯半径反推 `CURVE_COEF`。
 
 ### 7. 速度控制
 
