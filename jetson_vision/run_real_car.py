@@ -62,8 +62,7 @@ HOLD_FRAMES = int(os.environ.get("LOST_HOLD_FRAMES", "6"))
 SRCH_TURN   = float(os.environ.get("LOST_SEARCH_TURN", "11.0"))
 
 # Differential drive — real car
-CURVE_COEF   = float(os.environ.get("REAL_CAR_CURVE_COEF", "0.005"))
-HALF_TRACK   = float(os.environ.get("REAL_CAR_HALF_TRACK", "7.9"))   # cm
+ST2WHL       = float(os.environ.get("REAL_CAR_ST2WHL", "0.1"))       # steer→轮速差(cm/s)
 WHEEL_RADIUS = float(os.environ.get("REAL_CAR_WHEEL_RADIUS", "3.0")) # cm
 
 # Serial
@@ -155,7 +154,7 @@ def main():
 
     print(f"run_real_car: {actual_w}x{actual_h}  "
           f"KP_s={KP_S:.3f} KP_c={KP_C:.3f}  "
-          f"speed={BASE_SPD:.1f} cm/s  curve_coef={CURVE_COEF:.4f}  "
+          f"speed={BASE_SPD:.1f} cm/s  st2whl={ST2WHL:.2f}  wheel_r={WHEEL_RADIUS:.1f}cm  "
           f"max_sec={MAX_SEC:.0f}")
     print("Keys: 'q'=quit  's'=toggle serial")
 
@@ -218,10 +217,10 @@ def main():
         spd = max(spd, MIN_SPD)
 
         # ── Convert to 4 wheel speeds (rad/s) ──
-        curvature = steer * CURVE_COEF
-        omega     = spd * curvature                # angular vel of robot body
-        v_right   = spd + omega * HALF_TRACK       # cm/s at right wheels
-        v_left    = spd - omega * HALF_TRACK       # cm/s at left wheels
+        # steer 直接当轮速差, 和仿真一样: delta = steer × STEER_TO_WHEEL
+        delta    = steer * ST2WHL
+        v_right  = spd + delta                     # cm/s at right wheels
+        v_left   = spd - delta                     # cm/s at left wheels
 
         fl = v_left  / WHEEL_RADIUS  # rad/s
         fr = v_right / WHEEL_RADIUS
