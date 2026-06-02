@@ -30,7 +30,7 @@ def clamp(v, lo, hi):
 # ═══════════════════════════════════════════════════════════════════════
 
 # Camera
-CAM_IDX  = int(os.environ.get("CAM_IDX", "0"))
+CAM_IDX  = int(os.environ.get("CAM_IDX", "1"))
 CAM_W    = 1280
 CAM_H    = 720
 
