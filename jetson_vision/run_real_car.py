@@ -82,6 +82,7 @@ PRINT_INTERVAL = 0.5  # seconds between console prints
 # ═══════════════════════════════════════════════════════════════════════
 
 _ser = None
+_serial_first_sent = False
 
 def _serial_open():
     global _ser
@@ -104,11 +105,14 @@ def _serial_close():
 
 def _serial_send(frame: bytes):
     """Send binary frame to MCU. Returns True on success."""
-    global _ser, SERIAL_ENABLED
+    global _ser, SERIAL_ENABLED, _serial_first_sent
     if not SERIAL_ENABLED or _ser is None:
         return False
     try:
-        _ser.write(frame)
+        n = _ser.write(frame)
+        if not _serial_first_sent:
+            _serial_first_sent = True
+            print(f"[serial] first frame sent ({n} bytes): {frame.hex().upper()}")
         return True
     except Exception as e:
         print(f"[serial] write error: {e}")
