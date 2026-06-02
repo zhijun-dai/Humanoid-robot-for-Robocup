@@ -144,7 +144,7 @@ class LineDetector:
         # Band weights
         self.band_weight_down = 0.58
         self.band_weight_mid = 0.30
-        self.band_weight_up = 0.12
+        self.band_weight_up = 0.0   # 上 1/3 有暗角噪点, 不用 far 带
 
         # ── Obstacle detection ──
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
