@@ -53,8 +53,8 @@ STEER_SCL = float(os.environ.get("JETSON_STEER_SCALE", "0.6"))
 RATE_LIM  = float(os.environ.get("JETSON_STEER_RATE_LIMIT", "5.0"))
 
 # Speed (real car — cm/s)
-BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "20.0"))
-MIN_SPD   = float(os.environ.get("REAL_CAR_MIN_SPEED",   "10.0"))
+BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "10.0"))
+MIN_SPD   = float(os.environ.get("REAL_CAR_MIN_SPEED",   "5.0"))
 LOST_SPD  = float(os.environ.get("REAL_CAR_LOST_SCALE",  "0.92"))
 
 # Lost recovery
