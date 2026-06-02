@@ -68,7 +68,7 @@ WHEEL_RADIUS = float(os.environ.get("REAL_CAR_WHEEL_RADIUS", "3.0")) # cm
 # Serial
 SERIAL_PORT  = os.environ.get("SERIAL_PORT", "COM3")
 SERIAL_BAUD  = int(os.environ.get("SERIAL_BAUD", "115200"))
-SERIAL_ENABLED = False  # toggled by 's' key
+SERIAL_ENABLED = True   # 启动即开串口, 's' 键切换
 
 # Misc
 MAX_SEC = float(os.environ.get("REAL_CAR_MAX_SEC", "0"))  # 0 = no limit
