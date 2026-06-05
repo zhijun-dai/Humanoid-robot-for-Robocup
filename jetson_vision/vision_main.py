@@ -135,7 +135,7 @@ def main():
             cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_bgr, (320, 400), interpolation=cv2.INTER_NEAREST))
         if "binary_raw" in dbg and dbg["binary_raw"] is not None:
             b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("3.Otsu (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
+            cv2.imshow("3.Adaptive (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
         if vis_bird is not None:
             cv2.imshow("4.Close+Fit", cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST))
 
