@@ -37,15 +37,15 @@ CAM_H    = 720
 # Detector
 CAM_HEIGHT_CM  = float(os.environ.get("CAM_HEIGHT_CM",  "40.0"))
 CAM_PITCH_DEG  = float(os.environ.get("CAM_PITCH_DEG",  "45.0"))
-CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",   "44.0"))
+CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",   "49.0"))  # 100° diag / 16:9
 
 # PID — dual-mode (straight / curve)
 KP_S = float(os.environ.get("JETSON_PID_STRAIGHT_KP", "0.83"))
 KI_S = float(os.environ.get("JETSON_PID_STRAIGHT_KI", "0.004"))
 KD_S = float(os.environ.get("JETSON_PID_STRAIGHT_KD", "0.095"))
-KP_C = float(os.environ.get("JETSON_PID_CURVE_KP",    "0.98"))
+KP_C = float(os.environ.get("JETSON_PID_CURVE_KP",    "0.78"))
 KI_C = float(os.environ.get("JETSON_PID_CURVE_KI",    "0.002"))
-KD_C = float(os.environ.get("JETSON_PID_CURVE_KD",    "0.115"))
+KD_C = float(os.environ.get("JETSON_PID_CURVE_KD",    "0.16"))
 I_MAX  = float(os.environ.get("JETSON_PID_I_CLAMP",   "60.0"))
 PID_DT  = float(os.environ.get("JETSON_PID_DT",       "0.033"))  # nominal 30 FPS
 
@@ -55,7 +55,7 @@ STEER_SCL = float(os.environ.get("JETSON_STEER_SCALE", "0.6"))
 RATE_LIM  = float(os.environ.get("JETSON_STEER_RATE_LIMIT", "5.0"))
 
 # Speed (real car — cm/s)
-BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "10.0"))
+BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "15.0"))
 MIN_SPD   = float(os.environ.get("REAL_CAR_MIN_SPEED",   "5.0"))
 LOST_SPD  = float(os.environ.get("REAL_CAR_LOST_SCALE",  "0.92"))
 
@@ -138,8 +138,17 @@ def main():
         print(f"[ERROR] Cannot open camera index {CAM_IDX}")
         sys.exit(1)
 
+    # DSHOW sometimes reports 0x0 before first grab — read one frame to wake it
+    for _ in range(3):
+        ok, _ = cap.read()
+        if ok:
+            break
+        time.sleep(0.05)
+
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if actual_w <= 0 or actual_h <= 0:
+        actual_w, actual_h = CAM_W, CAM_H
     print(f"Camera {CAM_IDX}: requested {CAM_W}x{CAM_H}, got {actual_w}x{actual_h}")
 
     # ── Detector ──
@@ -252,22 +261,32 @@ def main():
             last_print_t = t
             print(f"{frame[0]:02X}{frame[1]:02X}{frame[2]:02X}{frame[3]:02X}{frame[4]:02X}{frame[5]:02X}")
 
-        # ── Display ──
-        # Build overlay on the vis image returned by detector
-        vis = _vis.copy() if _vis is not None else bgr.copy()
-        if vis.shape[:2] != (actual_h, actual_w):
-            vis = cv2.resize(vis, (actual_w, actual_h))
+        # ── Display (4 windows, same as vision_main.py) ──
+        def _put(img, s, y, color=(0, 255, 0)):
+            cv2.putText(img, s, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-        def _put(s, y, color=(0, 255, 0)):
-            cv2.putText(vis, s, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        # 1.Original — raw camera frame + overlay text
+        frame_disp = bgr.copy()
+        _put(frame_disp, f"steer:{steer:+.1f}  curve:{1 if curve else 0}  lost:{lost}", 25)
+        _put(frame_disp, f"spd:{spd:.1f} cm/s  conf:{conf:.2f}", 50)
+        _put(frame_disp, f"FL:{fl:+.1f}  FR:{fr:+.1f}  RL:{rl:+.1f}  RR:{rr:+.1f} rad/s", 75)
+        _put(frame_disp, f"SERIAL:{'ON' if SERIAL_ENABLED else 'OFF'}", 100, (255, 255, 0))
+        _put(frame_disp, "Q=quit S=toggle_serial", 125, (200, 200, 200))
+        cv2.imshow("1.Original", frame_disp)
 
-        _put(f"steer:{steer:+.1f}  curve:{1 if curve else 0}  lost:{lost}", 25)
-        _put(f"spd:{spd:.1f} cm/s  conf:{conf:.2f}", 50)
-        _put(f"FL:{fl:+.1f}  FR:{fr:+.1f}  RL:{rl:+.1f}  RR:{rr:+.1f} rad/s", 75)
-        _put(f"SERIAL:{'ON' if SERIAL_ENABLED else 'OFF'}", 100, (255, 255, 0))
-        _put("Q=quit S=toggle_serial", 125, (200, 200, 200))
+        # 2.Warp (birdseye)
+        if "bird" in dbg and dbg["bird"] is not None:
+            bird_bgr = cv2.cvtColor(dbg["bird"], cv2.COLOR_GRAY2BGR)
+            cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_bgr, (320, 400), interpolation=cv2.INTER_NEAREST))
 
-        cv2.imshow("run_real_car", vis)
+        # 3.Adaptive (binary)
+        if "binary_raw" in dbg and dbg["binary_raw"] is not None:
+            b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
+            cv2.imshow("3.Adaptive (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
+
+        # 4.Close+Fit — V1 annotated birdseye
+        if _vis is not None:
+            cv2.imshow("4.Close+Fit", cv2.resize(_vis, (320, 400), interpolation=cv2.INTER_NEAREST))
 
         # ── Keyboard ──
         key = cv2.waitKey(1) & 0xFF
