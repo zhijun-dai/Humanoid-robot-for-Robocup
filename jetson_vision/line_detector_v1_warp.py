@@ -1,9 +1,9 @@
 """V1 = V0's band-scanning detection heuristics + IPM birdseye warp.
 
 Key differences from V0:
-  - Warps BGR to 160x200 birdseye at start of process(), then all processing on birdseye
+  - Warps BGR to 320x400 birdseye at start of process(), then all processing on birdseye
   - No camera LUT — uniform cm_per_px on birdseye
-  - Band definitions adapted for 200px birdseye (down 133-199, mid 66-132, up 0-65)
+  - Band definitions adapted for 400px birdseye (down 266-398, mid 132-264, up 0-130)
   - No PID/steer/lost controller code — pure vision pipeline
   - No JSON config loading — all params are hardcoded defaults
   - Constructor: V1(cam_w=320, cam_h=240, cam_height_cm=38, cam_vfov_deg=43.6)
@@ -83,9 +83,9 @@ class LineDetector:
         self.cam_vfov_deg = float(cam_vfov_deg)
 
         # ── Birdseye ──
-        self.bird_h = 200
-        self.bird_w = 160
-        self.center_x = self.bird_w // 2  # 80
+        self.bird_h = 400
+        self.bird_w = 320
+        self.center_x = self.bird_w // 2  # 160
 
         # Build IPM matrix (same as V2/V3)
         self.M = self._build_birdseye_matrix(lookahead=(10.0, 80.0))
@@ -95,56 +95,47 @@ class LineDetector:
         # ── Threshold params ──
         self.th_offset = -8
         self.th_min = 25
-        self.th_max = 120
-        self.dark_margin = 12
+        self.th_max = 80
+        self.dark_margin = 24
         self.track_color_mode = "auto"
 
         # ── ROI general params ──
-        self.min_track_width = 12
-        self.max_track_width = 220
-        self.min_pair_ratio = 0.4
+        self.min_track_width = 24
+        self.max_track_width = 300    # narrow bands, max plausible width
+        self.min_pair_ratio = 0.35    # easier pair matching in tight band
         self.min_valid_lines = 2
-        self.width_std_max = 14
+        self.width_std_max = 20       # tighter band → lower width variance
         self.conf_min = 0.12
-        self.min_line_width = 2
-        self.max_line_width = 60   # 鸟瞰图 160px 宽, 横黑线 >60px 丢弃
-        self.lane_width_init_px = 70.0
-        self.lane_width_tol_px = 40.0
-        self.max_center_jump_px = 55.0
+        self.min_line_width = 4
+        self.max_line_width = 120
+        self.lane_width_init_px = 140.0
+        self.lane_width_tol_px = 50.0  # tighter band → tighter width tolerance
+        self.max_center_jump_px = 45.0  # 50px band, can't jump beyond band height
         self.min_pair_lines = 2
 
         # ── Simple Bottom Mode ──
         self.simple_bottom_mode = True
-        self.bottom_start_ratio = 0.75    # ~ row 150 in 200px birdseye
-        self.bottom_rows = 14
+        self.bottom_start_ratio = 0.875   # y=350, bottom 1/8
+        self.bottom_rows = 5
         self.bottom_step = 2
-        self.single_line_conf = 0.35
-        self.assist_enable = True
-        self.assist_start_ratio = 0.50   # ~ row 100
-        self.assist_end_ratio = 0.75     # ~ row 150
-        self.assist_rows = 12
-        self.assist_step = 2
+        self.single_line_conf = 0.30
+        self.assist_enable = False
 
-        # ── Three Band Mode (hard-coded for 200px birdseye) ──
-        self.three_band_mode = True
-        # Band row ranges
-        self.band_down_y0 = 133   # bottom ~1/3
-        self.band_down_y1 = 199
-        self.band_mid_y0 = 66     # middle ~1/3
-        self.band_mid_y1 = 132
-        self.band_up_y0 = 0       # top ~1/3
-        self.band_up_y1 = 65
+        # ── Two-band direction detection (lower 2 of 8 layers: 300-349, 350-399) ──
+        self.two_band_mode = True
+        # Band row ranges (400px birdseye, 50px per layer)
+        self.band_low_y0 = 350   # layer 7 — near positioning (bottom 1/8)
+        self.band_low_y1 = 399
+        self.band_mid_y0 = 300   # layer 6 — lookahead / curve detection
+        self.band_mid_y1 = 349
         # Band scan params
-        self.band_rows_down = 16
-        self.band_rows_mid = 14
-        self.band_rows_up = 12
-        self.band_step_down = 2
+        self.band_rows_low = 8
+        self.band_rows_mid = 8
+        self.band_step_low = 2
         self.band_step_mid = 2
-        self.band_step_up = 2
         # Band weights
-        self.band_weight_down = 0.58
-        self.band_weight_mid = 0.30
-        self.band_weight_up = 0.0   # 上 1/3 有暗角噪点, 不用 far 带
+        self.band_weight_low = 0.65
+        self.band_weight_mid = 0.35
 
         # ── Obstacle detection ──
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
@@ -156,12 +147,12 @@ class LineDetector:
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
-        self.bottom_lock_start_ratio = 0.80
-        self.bottom_lock_rows = 12
+        self.bottom_lock_start_ratio = 0.875  # y=350, bottom 1/8
+        self.bottom_lock_rows = 10
         self.bottom_lock_step = 2
         self.bottom_lock_min_pair_ratio = 0.55
-        self.bottom_lock_sym_tol_px = 12.0
-        self.bottom_lock_blend = 0.55
+        self.bottom_lock_sym_tol_px = 24.0
+        self.bottom_lock_blend = 0.72  # stronger lock anchor, less band-scan bias in curves
         self.bottom_lock_conf_penalty = 0.45
         self.bottom_lock_speed_penalty = 0.25
         self.lock_reacquire_reset = True
@@ -175,23 +166,23 @@ class LineDetector:
         self.startup_lost_bias_free = True
 
         # ── Fusion params ──
-        self.smooth_alpha = 0.65
-        self.curve_gain = 0.25
-        self.angle_gain = 0.22
+        self.smooth_alpha = 0.72         # narrower bands → more noise → more smoothing
+        self.curve_gain = 0.18
+        self.angle_gain = 0.15
         self.min_weight = 0.10
 
-        # ── Pixel domain gains（对齐旧代码 cm 域增益）──
-        self.pix_lookahead_gain = 0.35   # far band 前瞻权重 (旧: LOOKAHEAD_GAIN=0.35)
-        self.pix_curve_gain = 0.25       # 弯道偏差权重 (旧: CURVE_GAIN=0.25)
-        self.pix_angle_gain = 0.22       # 朝向角权重 (旧: ANGLE_GAIN=0.22)
-        self.curve_switch_px = 18.0
+        # ── Pixel domain gains（窄带适配：50px band separation, less lookahead）──
+        self.pix_lookahead_gain = 0.25   # far band closer, less curvature info
+        self.pix_curve_gain = 0.18       # narrower band → weaker curve signal
+        self.pix_angle_gain = 0.15       # fewer scanlines → noisier angle
+        self.curve_switch_px = 18.0      # ~1/3 of 50px band separation
         self.left_curve_outward_gain = 0.35
         self.left_curve_outward_px = 6.0
 
         # ── Shake robust ──
         self.robust_enable = True
         self.robust_diff_window = 5
-        self.robust_diff_rms_trigger_px = 6.0
+        self.robust_diff_rms_trigger_px = 8.0  # narrower band → lower diff tolerance
         self.robust_alpha_high = 0.88
         self.robust_bottom_lock_blend_scale = 1.5
         self.robust_decay_frames = 8
@@ -446,13 +437,19 @@ class LineDetector:
         best = None
         best_score = 1e9
         for i in range(len(runs)):
+            wi = runs[i][1] - runs[i][0] + 1
+            if wi < 5:  # too thin to be a real track edge, noise
+                continue
             li = 0.5 * (runs[i][0] + runs[i][1])
             for j in range(i + 1, len(runs)):
+                wj = runs[j][1] - runs[j][0] + 1
+                if wj < 5:
+                    continue
                 rj = 0.5 * (runs[j][0] + runs[j][1])
                 lane_w = rj - li
                 if self.min_track_width <= lane_w <= self.max_track_width:
                     if lane_width_hint > 0:
-                        max_width_err = max(24.0, self.lane_width_tol_px * 1.6)
+                        max_width_err = max(48.0, self.lane_width_tol_px * 1.6)
                         if abs(lane_w - lane_width_hint) > max_width_err:
                             continue
                     center = 0.5 * (li + rj)
@@ -575,6 +572,13 @@ class LineDetector:
             if chosen is not None:
                 center_px = chosen["center_px"]
                 lane_w = chosen["lane_width_px"]
+                # 空间连续性：和上一行的 center 比，跳跃太大说明是噪声
+                if len(centers_px) > 0:
+                    jump = abs(center_px - last_center)
+                    if jump > max(30.0, lane_w * 1.2):
+                        rows_done += 1
+                        y += row_step
+                        continue
                 if abs(center_px - last_center) > (self.max_center_jump_px * 2.2):
                     rows_done += 1
                     y += row_step
@@ -664,23 +668,19 @@ class LineDetector:
         return base
 
     # ═══════════════════════════════════════════════════════════
-    # Three-band cascade detection (hard-coded birdseye rows)
+    # Two-band cascade detection (hard-coded birdseye rows)
     # ═══════════════════════════════════════════════════════════
 
-    def _detect_three_band_lanes(self, gray, bgr, black_th, track_is_dark,
-                                 hint_x, lane_width_hint):
-        """Scan three bands on birdseye: down(133-199), mid(66-132), up(0-65).
-        Uses absolute row ranges for the fixed 200px birdseye."""
+    def _detect_two_band_lanes(self, gray, bgr, black_th, track_is_dark,
+                                hint_x, lane_width_hint):
+        """Scan two bands on birdseye: low(350-399), mid(300-349)."""
         band_specs = [
-            ("down", self.band_down_y0 / float(self.bird_h),
-                     self.band_down_y1 / float(self.bird_h),
-             self.band_rows_down, self.band_step_down, self.band_weight_down),
+            ("low", self.band_low_y0 / float(self.bird_h),
+                    self.band_low_y1 / float(self.bird_h),
+             self.band_rows_low, self.band_step_low, self.band_weight_low),
             ("mid", self.band_mid_y0 / float(self.bird_h),
                     self.band_mid_y1 / float(self.bird_h),
              self.band_rows_mid, self.band_step_mid, self.band_weight_mid),
-            ("up", self.band_up_y0 / float(self.bird_h),
-                   self.band_up_y1 / float(self.bird_h),
-             self.band_rows_up, self.band_step_up, self.band_weight_up),
         ]
 
         results = []
@@ -797,17 +797,15 @@ class LineDetector:
 
     @staticmethod
     def _band_bit(name):
-        if name == "down":
+        if name == "low":
             return 0x1
         if name == "mid":
             return 0x2
-        if name == "up":
-            return 0x4
         return 0
 
     @staticmethod
     def _single_band_mask(mask):
-        return mask in (0x1, 0x2, 0x4)
+        return mask in (0x1, 0x2)
 
     @staticmethod
     def _pick_result_by_band(results, order):
@@ -853,28 +851,47 @@ class LineDetector:
         # BGR birdseye for red detection
         bgr_bird = cv2.warpPerspective(bgr, self.M, (self.bird_w, self.bird_h))
 
+        # Black hat: suppress wide shadows, enhance thin dark lines → bright
+        k31 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
+        gray_detect = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, k31)
+
         img_w = self.bird_w
         img_h = self.bird_h
         img_cx = self.center_x
 
-        # ── Step 2: Otsu adaptive threshold ──
-        black_th = clamp(
-            self._otsu_threshold(gray) + self.th_offset,
-            self.th_min,
-            self.th_max,
+        # ── Step 2: Adaptive threshold (Gaussian + Otsu fallback) ──
+        # Otsu 全局阈值（保留作为参考）
+        otsu_th = self._otsu_threshold(gray_detect)
+
+        # 高斯自适应阈值（主力，对 black-hat 结果操作：线已变亮）
+        adaptive_binary = cv2.adaptiveThreshold(
+            gray_detect, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 31, -3  # blockSize=31, C=-3
         )
+        # Black-hat 后线变亮 → THRESH_BINARY 把线判为 255
+        adaptive_mask = (adaptive_binary == 255)
+        if np.count_nonzero(adaptive_mask) > 100:
+            black_th = np.median(gray_detect[adaptive_mask]) + self.th_offset
+        else:
+            black_th = otsu_th + self.th_offset
+
+        # 限幅
+        black_th = clamp(black_th, self.th_min, self.th_max)
 
         # ── Step 3: Track color detection ──
-        track_dark_candidate = self._detect_track_is_dark(gray, black_th)
-        if track_dark_candidate:
-            state["track_dark_score"] = int(
-                clamp(state["track_dark_score"] + 1, -6, 6)
-            )
-        else:
-            state["track_dark_score"] = int(
-                clamp(state["track_dark_score"] - 1, -6, 6)
-            )
-        track_is_dark = state["track_dark_score"] >= 0
+        # After black-hat, lines are always bright → track_is_dark=False
+        # Original _detect_track_is_dark call preserved for non-black-hat mode:
+        # track_dark_candidate = self._detect_track_is_dark(gray, black_th)
+        # if track_dark_candidate:
+        #     state["track_dark_score"] = int(
+        #         clamp(state["track_dark_score"] + 1, -6, 6)
+        #     )
+        # else:
+        #     state["track_dark_score"] = int(
+        #         clamp(state["track_dark_score"] - 1, -6, 6)
+        #     )
+        # track_is_dark = state["track_dark_score"] >= 0
+        track_is_dark = False
 
         # ── Startup transient params ──
         startup_active = (
@@ -900,26 +917,26 @@ class LineDetector:
         roi_results = []
         if startup_active and self.startup_force_simple_bottom:
             res = self._bottom_quarter_midline(
-                gray, bgr_bird, black_th, track_is_dark,
+                gray_detect, bgr_bird, black_th, track_is_dark,
                 scan_hint_center, scan_hint_width,
             )
             if res is not None and res["conf"] >= conf_min_dyn:
                 roi_results.append(res)
-            elif self.three_band_mode:
-                roi_results = self._detect_three_band_lanes(
-                    gray, bgr_bird, black_th, track_is_dark,
+            elif self.two_band_mode:
+                roi_results = self._detect_two_band_lanes(
+                    gray_detect, bgr_bird, black_th, track_is_dark,
                     scan_hint_center, scan_hint_width,
                 )
                 roi_results = [r for r in roi_results if r["conf"] >= conf_min_dyn]
-        elif self.three_band_mode:
-            roi_results = self._detect_three_band_lanes(
-                gray, bgr_bird, black_th, track_is_dark,
+        elif self.two_band_mode:
+            roi_results = self._detect_two_band_lanes(
+                gray_detect, bgr_bird, black_th, track_is_dark,
                 scan_hint_center, scan_hint_width,
             )
             roi_results = [r for r in roi_results if r["conf"] >= conf_min_dyn]
         elif self.simple_bottom_mode:
             res = self._bottom_quarter_midline(
-                gray, bgr_bird, black_th, track_is_dark,
+                gray_detect, bgr_bird, black_th, track_is_dark,
                 scan_hint_center, scan_hint_width,
             )
             if res is not None and res["conf"] >= conf_min_dyn:
@@ -945,7 +962,7 @@ class LineDetector:
 
         # ── Bottom center lock ──
         bottom_lock = self._detect_bottom_center_lock(
-            gray, bgr_bird, black_th, track_is_dark,
+            gray_detect, bgr_bird, black_th, track_is_dark,
         )
         bottom_pair_ratio = float(bottom_lock.get("pair_ratio", 0.0))
         bottom_sym_err_px = float(bottom_lock.get("center_err_px", 0.0))
@@ -972,11 +989,11 @@ class LineDetector:
         if roi_results:
             state["lost_frames"] = 0
 
-            near = self._pick_result_by_band(roi_results, ("down", "mid", "up"))
+            near = self._pick_result_by_band(roi_results, ("low", "mid"))
             if near is None:
                 near = min(roi_results, key=lambda r: r["dist_cm"])
 
-            far = self._pick_result_by_band(roi_results, ("up", "mid", "down"))
+            far = self._pick_result_by_band(roi_results, ("mid", "low"))
             if far is None:
                 far = max(roi_results, key=lambda r: r["dist_cm"])
 
@@ -997,8 +1014,8 @@ class LineDetector:
             far_err_px = far["center_px"] - img_cx
             far_err_px_saved = far_err_px  # raw far error for controller (pre-assist)
 
-            # If near band missing (only mid/up visible), blend with history
-            if str(near.get("band_name", "")) != "down":
+            # If near band missing (only mid visible), blend with history
+            if str(near.get("band_name", "")) != "low":
                 near_err_cm = 0.68 * near_err_cm + 0.32 * state["last_base_err"]
                 near_err_px = 0.68 * near_err_px + 0.32 * (
                     state["last_lane_center_x"] - img_cx
@@ -1139,13 +1156,29 @@ class LineDetector:
         )
 
         # ── Debug info ──
-        _, binary_raw = cv2.threshold(gray, black_th, 255, cv2.THRESH_BINARY)
+        _, binary_raw = cv2.threshold(gray_detect, black_th, 255, cv2.THRESH_BINARY)
+        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        # Round 1: close gaps
+        binary_c1 = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k5, iterations=1)
+        # Round 1: open to remove small noise
+        binary_o1 = cv2.morphologyEx(binary_c1, cv2.MORPH_OPEN, k5, iterations=1)
+        # Round 2: close again (some thin lines may break after open)
+        binary_c2 = cv2.morphologyEx(binary_o1, cv2.MORPH_CLOSE, k5, iterations=1)
         k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        binary_closed = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k3, iterations=1)
+        binary_clean = cv2.morphologyEx(binary_c2, cv2.MORPH_OPEN, k3, iterations=1)
+        # Connected component filter: drop noise blobs and tape-mark strips
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_clean, connectivity=8)
+        for label_id in range(1, num_labels):
+            area = stats[label_id, cv2.CC_STAT_AREA]
+            h = stats[label_id, cv2.CC_STAT_HEIGHT]
+            # Real track edge spans many rows (>80px); short/tiny blobs are noise
+            if area < 300 or h < 80:
+                binary_clean[labels == label_id] = 0
+        binary_raw_inv = 255 - binary_clean  # invert: black line on white bg
         debug = {
             "bird": gray,
-            "binary_raw": binary_raw,
-            "binary": binary_closed,
+            "binary_raw": binary_raw_inv,
+            "binary": binary_clean,
             "black_th": black_th,
             "track_is_dark": track_is_dark,
             "base_err_px": base_err_px,
@@ -1186,11 +1219,10 @@ class LineDetector:
         """Overlay detection results on the birdseye image."""
         vis = cv2.cvtColor(gray_bird, cv2.COLOR_GRAY2BGR)
 
-        # Draw three band regions
+        # Draw two band regions
         band_regions = [
-            (self.band_down_y0, self.band_down_y1, (255, 200, 100)),
+            (self.band_low_y0, self.band_low_y1, (255, 200, 100)),
             (self.band_mid_y0, self.band_mid_y1, (100, 200, 255)),
-            (self.band_up_y0, self.band_up_y1, (100, 255, 100)),
         ]
         for y0, y1, color in band_regions:
             y0_cl = clamp(y0, 0, self.bird_h - 1)
@@ -1213,12 +1245,10 @@ class LineDetector:
             cx = int(r.get("center_px", 0))
             if "band_name" in r:
                 bn = r["band_name"]
-                if bn == "down":
-                    approx_y = (self.band_down_y0 + self.band_down_y1) // 2
+                if bn == "low":
+                    approx_y = (self.band_low_y0 + self.band_low_y1) // 2
                 elif bn == "mid":
                     approx_y = (self.band_mid_y0 + self.band_mid_y1) // 2
-                elif bn == "up":
-                    approx_y = (self.band_up_y0 + self.band_up_y1) // 2
                 else:
                     approx_y = self.bird_h // 2
             else:
@@ -1242,7 +1272,7 @@ class LineDetector:
 
         # Heading indicator
         arrow_len = 35
-        h_rad = math.radians(heading_deg)
+        h_rad = math.radians(-heading_deg)  # positive=right curve, but line-fit sign is opposite
         dx = int(arrow_len * math.sin(h_rad))
         dy = -int(arrow_len * math.cos(h_rad))
         arrow_start = (self.center_x, self.bird_h - 40)
@@ -1261,9 +1291,8 @@ class LineDetector:
 
         # Band labels
         label_y = self.bird_h - 6
-        cv2.putText(vis, "down", (6, label_y), font, 0.35, (180, 180, 255), 1)
+        cv2.putText(vis, "low", (6, label_y), font, 0.35, (180, 180, 255), 1)
         cv2.putText(vis, "mid", (50, label_y), font, 0.35, (180, 255, 180), 1)
-        cv2.putText(vis, "up", (94, label_y), font, 0.35, (180, 255, 180), 1)
 
         return vis
 
