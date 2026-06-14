@@ -30,7 +30,7 @@ def clamp(v, lo, hi):
 # ═══════════════════════════════════════════════════════════════════════
 
 # Camera
-CAM_IDX  = int(os.environ.get("CAM_IDX", "1"))
+CAM_IDX  = int(os.environ.get("CAM_IDX", "0"))
 CAM_W    = 1280
 CAM_H    = 720
 
@@ -55,7 +55,7 @@ STEER_SCL = float(os.environ.get("JETSON_STEER_SCALE", "0.6"))
 RATE_LIM  = float(os.environ.get("JETSON_STEER_RATE_LIMIT", "5.0"))
 
 # Speed (real car — cm/s)
-BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "15.0"))
+BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "35.0"))
 MIN_SPD   = float(os.environ.get("REAL_CAR_MIN_SPEED",   "5.0"))
 LOST_SPD  = float(os.environ.get("REAL_CAR_LOST_SCALE",  "0.92"))
 
@@ -162,6 +162,7 @@ def main():
     last_err      = 0.0
     last_steer    = 0.0
     last_lock_ok  = False
+    last_curve    = False   # detect curve→straight transitions
     last_print_t  = -99.0
     last_serial_t = 0.0
     t0            = None
@@ -201,28 +202,46 @@ def main():
         last_lock_ok = lock_ok
 
         # ── PID (dual-mode) or lost recovery ──
+        # Speed factor (10 cm/s = 1.0)
+        spd_f = max(BASE_SPD / 10.0, 0.5)
+
         if lost == 0:
             kp, ki, kd = (KP_C, KI_C, KD_C) if curve else (KP_S, KI_S, KD_S)
-            integral += err * PID_DT
-            integral = clamp(integral, -I_MAX, I_MAX)
+
+            # Speed-adaptive gains
+            # KD kept as-is (derr already grows with speed, don't double-scale)
+            integral += err * PID_DT / spd_f  # KI: slow accumulation at high speed
+            integral = clamp(integral, -I_MAX / spd_f, I_MAX / spd_f)  # tighten clamp
+
             derr = (err - last_err) / max(PID_DT, 1e-3)
             last_err = err
+
+            # Curve exit boost: clear integral + extra KD to snap back to straight
+            curve_exit = last_curve and not curve
+            if curve_exit:
+                integral *= 0.2
+                kd *= 1.6
+            last_curve = curve
+
             pid_out = kp * err + ki * integral + kd * derr
             steer = STEER_SAT * math.tanh(pid_out / STEER_SCL)
+            steer *= spd_f ** 0.85  # speed-scaled steering (R ∝ v, need more steer)
             if conf < 0.25:
                 integral *= 0.85
         else:
-            if lost <= HOLD_FRAMES:
+            hold_frames = max(3, int(HOLD_FRAMES / spd_f ** 0.5))
+            if lost <= hold_frames:
                 steer = last_steer * 0.85
             else:
                 phase = (lost // 8) % 2
                 steer = abs(SRCH_TURN) if phase == 0 else -abs(SRCH_TURN)
             integral *= 0.5
 
-        # ── Steer rate limit ──
+        # ── Steer rate limit (speed-scaled) ──
         ds = steer - last_steer
-        if abs(ds) > RATE_LIM:
-            steer = last_steer + math.copysign(RATE_LIM, ds)
+        rate_lim_spd = RATE_LIM * spd_f ** 0.5
+        if abs(ds) > rate_lim_spd:
+            steer = last_steer + math.copysign(rate_lim_spd, ds)
         last_steer = steer
 
         # ── Speed control ──

@@ -14,7 +14,7 @@ from line_detector_v1_warp import LineDetector
 
 
 # ── 可调参数 ──
-CAM_IDX = 1          # 0=内置 1=USB（不确定就试）
+CAM_IDX = 0          # 0=内置 1=USB（不确定就试）
 CAM_W = 1280
 CAM_H = 720
 COOLDOWN_MS = 2000
