@@ -841,15 +841,12 @@ class LineDetector:
         state = self._state
         state["startup_frames"] += 1
 
-        # ── Step 1: Warp to birdseye ──
-        # Custom grayscale: max of max(R,G,B) and standard grayscale
-        gray_max = np.max(bgr, axis=2)
-        gray_std = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        gray_input = np.maximum(gray_max, gray_std)
-        gray = cv2.warpPerspective(gray_input, self.M, (self.bird_w, self.bird_h))
-
-        # BGR birdseye for red detection
+        # ── Step 1: Warp to birdseye (single warp, derive gray on birdseye) ──
         bgr_bird = cv2.warpPerspective(bgr, self.M, (self.bird_w, self.bird_h))
+        # Custom grayscale on birdseye: max of max(R,G,B) and standard grayscale
+        gray_max = np.max(bgr_bird, axis=2)
+        gray_std = cv2.cvtColor(bgr_bird, cv2.COLOR_BGR2GRAY)
+        gray = np.maximum(gray_max, gray_std)
 
         # Black hat: suppress wide shadows, enhance thin dark lines → bright
         k31 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
@@ -877,6 +874,24 @@ class LineDetector:
 
         # 限幅
         black_th = clamp(black_th, self.th_min, self.th_max)
+
+        # ── Clean gray_detect: morphology + CC on the detection input ──
+        _, binary_clean = cv2.threshold(gray_detect, black_th, 255, cv2.THRESH_BINARY)
+        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        binary_clean = cv2.morphologyEx(binary_clean, cv2.MORPH_CLOSE, k5, iterations=1)
+        binary_clean = cv2.morphologyEx(binary_clean, cv2.MORPH_OPEN, k5, iterations=1)
+        binary_clean = cv2.morphologyEx(binary_clean, cv2.MORPH_CLOSE, k5, iterations=1)
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        binary_clean = cv2.morphologyEx(binary_clean, cv2.MORPH_OPEN, k3, iterations=1)
+        # Connected component filter
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_clean, connectivity=8)
+        for label_id in range(1, num_labels):
+            area = stats[label_id, cv2.CC_STAT_AREA]
+            h = stats[label_id, cv2.CC_STAT_HEIGHT]
+            if area < 300 or h < 80:
+                binary_clean[labels == label_id] = 0
+        # Apply mask: noise pixels → 0, track pixels keep original value
+        gray_detect[binary_clean == 0] = 0
 
         # ── Step 3: Track color detection ──
         # After black-hat, lines are always bright → track_is_dark=False
@@ -1156,25 +1171,7 @@ class LineDetector:
         )
 
         # ── Debug info ──
-        _, binary_raw = cv2.threshold(gray_detect, black_th, 255, cv2.THRESH_BINARY)
-        k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        # Round 1: close gaps
-        binary_c1 = cv2.morphologyEx(binary_raw, cv2.MORPH_CLOSE, k5, iterations=1)
-        # Round 1: open to remove small noise
-        binary_o1 = cv2.morphologyEx(binary_c1, cv2.MORPH_OPEN, k5, iterations=1)
-        # Round 2: close again (some thin lines may break after open)
-        binary_c2 = cv2.morphologyEx(binary_o1, cv2.MORPH_CLOSE, k5, iterations=1)
-        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        binary_clean = cv2.morphologyEx(binary_c2, cv2.MORPH_OPEN, k3, iterations=1)
-        # Connected component filter: drop noise blobs and tape-mark strips
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_clean, connectivity=8)
-        for label_id in range(1, num_labels):
-            area = stats[label_id, cv2.CC_STAT_AREA]
-            h = stats[label_id, cv2.CC_STAT_HEIGHT]
-            # Real track edge spans many rows (>80px); short/tiny blobs are noise
-            if area < 300 or h < 80:
-                binary_clean[labels == label_id] = 0
-        binary_raw_inv = 255 - binary_clean  # invert: black line on white bg
+        binary_raw_inv = 255 - binary_clean  # invert for display: black line on white bg
         debug = {
             "bird": gray,
             "binary_raw": binary_raw_inv,

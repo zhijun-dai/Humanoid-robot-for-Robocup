@@ -54,6 +54,10 @@ STEER_SAT = float(os.environ.get("JETSON_STEER_SAT",   "45.0"))
 STEER_SCL = float(os.environ.get("JETSON_STEER_SCALE", "0.6"))
 RATE_LIM  = float(os.environ.get("JETSON_STEER_RATE_LIMIT", "5.0"))
 
+# Speed-scaling exponent for steer (0=no scaling, 1.0=curvature-invariant)
+# Physics: kappa = delta/speed, so steer ∝ speed^1.0 for same trajectory
+ST2SPD_EXP = float(os.environ.get("JETSON_STEER_SPEED_EXP", "1.0"))
+
 # Speed (real car — cm/s)
 BASE_SPD  = float(os.environ.get("REAL_CAR_SPEED",       "35.0"))
 MIN_SPD   = float(os.environ.get("REAL_CAR_MIN_SPEED",   "5.0"))
@@ -164,7 +168,7 @@ def main():
     last_lock_ok  = False
     last_curve    = False   # detect curve→straight transitions
     last_print_t  = -99.0
-    last_serial_t = 0.0
+    last_frame_t  = 0.0     # actual dt measurement
     t0            = None
 
     print(f"run_real_car: {actual_w}x{actual_h}  "
@@ -180,6 +184,9 @@ def main():
         t = time.time()
         if t0 is None:
             t0 = t
+        dt = t - last_frame_t if last_frame_t > 0 else PID_DT
+        dt = clamp(dt, 0.01, 0.2)
+        last_frame_t = t
 
         # ── Grab frame ──
         ok, bgr = cap.read()
@@ -210,10 +217,10 @@ def main():
 
             # Speed-adaptive gains
             # KD kept as-is (derr already grows with speed, don't double-scale)
-            integral += err * PID_DT / spd_f  # KI: slow accumulation at high speed
+            integral += err * dt / spd_f  # KI: slow accumulation at high speed
             integral = clamp(integral, -I_MAX / spd_f, I_MAX / spd_f)  # tighten clamp
 
-            derr = (err - last_err) / max(PID_DT, 1e-3)
+            derr = (err - last_err) / max(dt, 1e-3)
             last_err = err
 
             # Curve exit boost: clear integral + extra KD to snap back to straight
@@ -225,7 +232,7 @@ def main():
 
             pid_out = kp * err + ki * integral + kd * derr
             steer = STEER_SAT * math.tanh(pid_out / STEER_SCL)
-            steer *= spd_f ** 0.85  # speed-scaled steering (R ∝ v, need more steer)
+            steer *= spd_f ** ST2SPD_EXP  # speed-scaled steering (kappa = delta/v)
             if conf < 0.25:
                 integral *= 0.85
         else:
@@ -234,7 +241,7 @@ def main():
                 steer = last_steer * 0.85
             else:
                 phase = (lost // 8) % 2
-                steer = abs(SRCH_TURN) if phase == 0 else -abs(SRCH_TURN)
+                steer = abs(SRCH_TURN) * spd_f ** 0.5 if phase == 0 else -abs(SRCH_TURN) * spd_f ** 0.5
             integral *= 0.5
 
         # ── Steer rate limit (speed-scaled) ──
@@ -263,20 +270,17 @@ def main():
         rl = fl
         rr = fr
 
-        # ── Serial output (~10 Hz), binary protocol ──
-        if t - last_serial_t >= 0.1:
-            last_serial_t = t
-            # rad/s → int8_t: ×10, clamp [-127,127], 0=stop, 正=forward
-            def _rad2byte(v):
-                return max(-127, min(127, int(v * 10.0))) & 0xFF
-            frame = bytes([0xFF,
-                           _rad2byte(fr), _rad2byte(fl),
-                           _rad2byte(rr), _rad2byte(rl),
-                           0xEE])
-            _serial_send(frame)
+        # ── Serial output (every frame, camera-rate) ──
+        def _rad2byte(v):
+            return max(-127, min(127, int(v * 10.0))) & 0xFF
+        frame = bytes([0xFF,
+                       _rad2byte(fr), _rad2byte(fl),
+                       _rad2byte(rr), _rad2byte(rl),
+                       0xEE])
+        _serial_send(frame)
 
-        # ── Console: 打印串口帧（10Hz） ──
-        if t - last_print_t > PRINT_INTERVAL and t - last_serial_t < 0.15:
+        # ── Console print (every PRINT_INTERVAL seconds) ──
+        if t - last_print_t > PRINT_INTERVAL:
             last_print_t = t
             print(f"{frame[0]:02X}{frame[1]:02X}{frame[2]:02X}{frame[3]:02X}{frame[4]:02X}{frame[5]:02X}")
 
