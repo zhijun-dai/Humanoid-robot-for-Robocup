@@ -188,6 +188,9 @@ class LineDetector:
         self.robust_decay_frames = 8
 
         # ── Internal state ──
+        self._prev_gray = None       # optical flow frame buffer
+        self._speed_smooth = 0.0     # EMA smoothed visual speed (cm/s)
+        self._omega_smooth = 0.0     # EMA smoothed visual omega (rad/s)
         self._state = {
             "smoothed_err": 0.0,
             "lost_frames": 0,
@@ -370,35 +373,34 @@ class LineDetector:
     # ═══════════════════════════════════════════════════════════
 
     def _detect_row_blocker(self, gray, bgr, y, x0, x1, black_th, track_is_dark):
-        total = max(1, x1 - x0 + 1)
-        track_count = 0
-        red_count = 0
-        longest_track_run = 0
-        cur_run = 0
+        n = max(1, x1 - x0 + 1)
+        red_block = False
+        black_block = False
 
-        for x in range(x0, x1 + 1):
-            g = int(gray[y, x])
-            is_track = self._pixel_is_track(g, black_th, track_is_dark)
-            if is_track:
-                track_count += 1
-                cur_run += 1
-                if cur_run > longest_track_run:
-                    longest_track_run = cur_run
+        if self.red_detect_enable:
+            rb = bgr[y, x0:x1 + 1, 0].astype(np.int32)
+            rg = bgr[y, x0:x1 + 1, 1].astype(np.int32)
+            rr = bgr[y, x0:x1 + 1, 2].astype(np.int32)
+            is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
+            if np.count_nonzero(is_red) / n >= self.red_row_ratio:
+                red_block = True
+
+        if not red_block:
+            row_g = gray[y, x0:x1 + 1]
+            if track_is_dark:
+                is_track = row_g <= black_th
             else:
-                cur_run = 0
+                is_track = row_g >= black_th
+            padded = np.concatenate(([False], is_track, [False]))
+            rises = np.where(np.diff(padded.astype(np.int8)) == 1)[0]
+            falls = np.where(np.diff(padded.astype(np.int8)) == -1)[0]
+            if len(rises) > 0:
+                longest = int(np.max(falls - rises + 1))
+                cover = int(np.sum(is_track))
+                if (longest >= self.cross_black_run_ratio * n and
+                        cover >= self.cross_black_cover_ratio * n):
+                    black_block = True
 
-            if self._pixel_is_red(bgr, x, y):
-                red_count += 1
-
-        red_ratio = red_count / float(total)
-        cover_ratio = track_count / float(total)
-        run_ratio = longest_track_run / float(total)
-
-        red_block = red_ratio >= self.red_row_ratio
-        black_block = (
-            run_ratio >= self.cross_black_run_ratio
-            and cover_ratio >= self.cross_black_cover_ratio
-        )
         return red_block, black_block
 
     # ═══════════════════════════════════════════════════════════
@@ -406,25 +408,18 @@ class LineDetector:
     # ═══════════════════════════════════════════════════════════
 
     def _collect_track_runs_on_row(self, gray, y, x0, x1, black_th, track_is_dark):
-        runs = []
-        run_start = -1
-        for x in range(x0, x1 + 1):
-            g = int(gray[y, x])
-            is_track = self._pixel_is_track(g, black_th, track_is_dark)
-            if is_track and run_start < 0:
-                run_start = x
-            elif (not is_track) and run_start >= 0:
-                run_end = x - 1
-                w = run_end - run_start + 1
-                if self.min_line_width <= w <= self.max_line_width:
-                    runs.append((run_start, run_end))
-                run_start = -1
-        if run_start >= 0:
-            run_end = x1
-            w = run_end - run_start + 1
-            if self.min_line_width <= w <= self.max_line_width:
-                runs.append((run_start, run_end))
-        return runs
+        row = gray[y, x0:x1 + 1]
+        if track_is_dark:
+            mask = row <= black_th
+        else:
+            mask = row >= black_th
+
+        padded = np.concatenate(([False], mask, [False]))
+        rises = np.where(np.diff(padded.astype(np.int8)) == 1)[0] + x0
+        falls = np.where(np.diff(padded.astype(np.int8)) == -1)[0] + x0 - 1
+        widths = falls - rises + 1
+        valid = (widths >= self.min_line_width) & (widths <= self.max_line_width)
+        return list(zip(rises[valid].tolist(), falls[valid].tolist()))
 
     # ═══════════════════════════════════════════════════════════
     # Pair selection
@@ -634,6 +629,8 @@ class LineDetector:
             "single_ratio": single_ratio,
             "red_block_ratio": red_block_rows / float(max(1, max_rows)),
             "black_block_ratio": black_block_rows / float(max(1, max_rows)),
+            "ys_list": ys,
+            "centers_list": centers_px,
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -715,6 +712,8 @@ class LineDetector:
                 "center_px": float(self.center_x),
                 "center_err_px": 0.0,
                 "symmetry_abs_px": 0.0,
+                "centers_list": [],
+                "center_ys": [],
             }
 
         img_w = self.bird_w
@@ -728,6 +727,7 @@ class LineDetector:
         pair_rows = 0
         rows_done = 0
         centers = []
+        center_ys = []
 
         y = y_start
         while y < img_h and rows_done < max(1, self.bottom_lock_rows):
@@ -748,6 +748,7 @@ class LineDetector:
             if chosen is not None:
                 pair_rows += 1
                 centers.append(float(chosen["center_px"]))
+                center_ys.append(y)
 
             rows_done += 1
             y += row_step
@@ -760,6 +761,8 @@ class LineDetector:
                 "center_px": float(img_cx),
                 "center_err_px": 0.0,
                 "symmetry_abs_px": float(img_w),
+                "centers_list": [],
+                "center_ys": [],
             }
 
         pair_ratio = pair_rows / float(rows_done)
@@ -789,6 +792,8 @@ class LineDetector:
             "center_px": center_px,
             "center_err_px": center_err_px,
             "symmetry_abs_px": symmetry_abs_px,
+            "centers_list": centers,
+            "center_ys": center_ys,
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -1084,12 +1089,61 @@ class LineDetector:
                 far_err_px = float(near["assist_center_px"]) - img_cx
                 far_err_cm = float(near.get("assist_center_cm", near_err_cm))
                 far_dist_cm = float(near.get("assist_dist_cm", far_dist_cm))
-                angle_err = 0.5 * (
-                    near["angle"]
-                    + float(near.get("assist_angle_deg", near["angle"]))
-                )
+
+            # ── Unified heading fit: merge all center points from both bands + bottom lock ──
+            all_ys = []
+            all_cx = []
+            all_w  = []
+
+            if "ys_list" in near and "centers_list" in near:
+                yl = near["ys_list"]
+                cl = near["centers_list"]
+                all_ys.extend(yl)
+                all_cx.extend(cl)
+                w = float(near.get("pair_ratio", 0.5))
+                all_w.extend([w] * len(yl))
+
+            if "ys_list" in far and "centers_list" in far:
+                yl = far["ys_list"]
+                cl = far["centers_list"]
+                all_ys.extend(yl)
+                all_cx.extend(cl)
+                w = float(far.get("pair_ratio", 0.5))
+                all_w.extend([w] * len(yl))
+
+            if "centers_list" in bottom_lock and "center_ys" in bottom_lock:
+                yl = bottom_lock["center_ys"]
+                cl = bottom_lock["centers_list"]
+                if len(yl) >= 2:
+                    all_ys.extend(yl)
+                    all_cx.extend(cl)
+                    lock_q = float(bottom_lock.get("quality", 0.5))
+                    all_w.extend([lock_q * 1.5] * len(yl))
+
+            if len(all_ys) >= 3:
+                w_arr = np.array(all_w, dtype=np.float64)
+                y_arr = np.array(all_ys, dtype=np.float64)
+                x_arr = np.array(all_cx, dtype=np.float64)
+                w_sum = float(np.sum(w_arr))
+                if w_sum > 0:
+                    w_arr /= w_sum
+                y_mean = float(np.average(y_arr, weights=w_arr))
+                x_mean = float(np.average(x_arr, weights=w_arr))
+                num = float(np.sum(w_arr * (y_arr - y_mean) * (x_arr - x_mean)))
+                den = float(np.sum(w_arr * (y_arr - y_mean) ** 2))
+                if den > 1e-9:
+                    a = num / den
+                    angle_err = math.degrees(math.atan(a))
+                else:
+                    angle_err = 0.5 * (near["angle"] + far["angle"])
             else:
-                angle_err = 0.5 * (near["angle"] + far["angle"])
+                if use_assist:
+                    angle_err = 0.5 * (
+                        near["angle"]
+                        + float(near.get("assist_angle_deg", near["angle"]))
+                    )
+                else:
+                    angle_err = 0.5 * (near["angle"] + far["angle"])
 
             curve_px = far_err_px - near_err_px
             avg_conf = sum(
@@ -1202,6 +1256,35 @@ class LineDetector:
             "fused_err": state["smoothed_err"],
             "curve_mode": curve_mode,
         }
+
+        # ── Optical flow speed estimation (on raw gray birdseye) ──
+        if self._prev_gray is not None:
+            # Farneback dense flow: bottom 150 rows only
+            flow = cv2.calcOpticalFlowFarneback(
+                self._prev_gray, gray, None,
+                0.5, 2, 15, 1, 5, 1.1, 0)  # pyr_scale, levels, winsize, iters, poly_n, sigma, flags
+            roi_vy = flow[250:400, :, 1]       # vertical flow (forward)
+            v_fwd_px = float(np.median(roi_vy))  # median pixels/frame
+
+            # Forward speed: px/frame × cm/px × fps → cm/s
+            # z_per_px for y direction (vertical cm per pixel in birdseye)
+            v_raw = v_fwd_px * self.z_per_px * 30.0  # nominal 30fps
+            self._speed_smooth = 0.7 * self._speed_smooth + 0.3 * v_raw
+
+            # Angular speed: linear fit vx vs z_cm in bottom 150 rows
+            roi_vx = flow[250:400, :, 0]       # horizontal flow
+            vx_per_row = np.median(roi_vx, axis=1)
+            z_arr = self.z_per_px * np.arange(149.0, -1.0, -1.0)  # z_cm per row
+            mask = ~np.isnan(vx_per_row)
+            if mask.sum() >= 3:
+                slope, _ = np.polyfit(z_arr[mask], vx_per_row[mask], 1)
+                omega_px = -slope          # px/frame per cm
+                omega_raw = omega_px * 30.0 * self.z_per_px  # approximate rad/s
+                self._omega_smooth = 0.7 * self._omega_smooth + 0.3 * omega_raw
+        self._prev_gray = gray.copy()
+
+        debug["vision_speed_cm_s"] = self._speed_smooth
+        debug["vision_omega_rad_s"] = self._omega_smooth
 
         return dev_px, heading_deg, conf, vis, debug
 

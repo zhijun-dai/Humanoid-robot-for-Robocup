@@ -63,7 +63,9 @@ def main():
 
         # ── 巡线 ──
         dev_px, heading_deg, conf, vis_bird, dbg = ld.process(frame)
-        status_line = f"FPS={fps_val:.0f}"
+        vs = dbg.get("vision_speed_cm_s", 0.0)
+        os = dbg.get("vision_omega_rad_s", 0.0)
+        status_line = f"FPS={fps_val:.0f}  v={vs:.1f}cm/s"
 
         if dev_px is not None and conf > 0.15:
             # 转弯方向判定

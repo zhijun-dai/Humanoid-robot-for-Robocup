@@ -65,13 +65,13 @@ E-puck {
   supervisor TRUE
   turretSlot [
     DEF CAM_POSE Pose {
-      translation 0 0 0.38
+      translation 0 0 0.40
       children [
         Camera {
           name "camera_ext"
           width 640
           height 480
-          fieldOfView 0.9793406158899142
+          fieldOfView 0.855
           rotation 0 1 0 0.7853981633974483
           near 0.01
         }

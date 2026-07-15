@@ -7,8 +7,8 @@
   "camera": {
     "pitch_deg": 45.0,
     "height_cm": 40.0,
-    "vfov_deg": 44.43470249635244,
-    "hfov_deg": 57.52869779855638,
+    "vfov_deg": 49.0,
+    "hfov_deg": 62.6,
     "row_dist_min_cm": 6.0,
     "row_dist_max_cm": 300.0,
     "calibration": {
