@@ -293,9 +293,14 @@ def main():
         _put(frame_disp, f"steer:{steer:+.1f}  curve:{1 if curve else 0}  lost:{lost}", 25)
         vs = dbg.get("vision_speed_cm_s", 0.0)
         _put(frame_disp, f"cmd:{spd:.1f}  vis:{vs:.1f} cm/s  conf:{conf:.2f}", 50)
+        rb = "RED!" if dbg.get("red_bar_detected", False) else ""
+        ng = "NARROW!" if dbg.get("narrow_gate_detected", False) else ""
+        extra = "  ".join(filter(None, [rb, ng]))
         _put(frame_disp, f"FL:{fl:+.1f}  FR:{fr:+.1f}  RL:{rl:+.1f}  RR:{rr:+.1f} rad/s", 75)
-        _put(frame_disp, f"SERIAL:{'ON' if SERIAL_ENABLED else 'OFF'}", 100, (255, 255, 0))
-        _put(frame_disp, "Q=quit S=toggle_serial", 125, (200, 200, 200))
+        if extra:
+            _put(frame_disp, extra, 100, (0, 0, 255))
+        _put(frame_disp, f"SERIAL:{'ON' if SERIAL_ENABLED else 'OFF'}", 115, (255, 255, 0))
+        _put(frame_disp, "Q=quit S=toggle_serial", 140, (200, 200, 200))
         cv2.imshow("1.Original", frame_disp)
 
         # 2.Warp (birdseye)

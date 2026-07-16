@@ -66,6 +66,10 @@ def main():
         vs = dbg.get("vision_speed_cm_s", 0.0)
         os = dbg.get("vision_omega_rad_s", 0.0)
         status_line = f"FPS={fps_val:.0f}  v={vs:.1f}cm/s"
+        if dbg.get("red_bar_detected"):
+            status_line += "  RED_BAR!"
+        if dbg.get("narrow_gate_detected"):
+            status_line += "  NARROW!"
 
         if dev_px is not None and conf > 0.15:
             # 转弯方向判定
