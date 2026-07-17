@@ -93,7 +93,7 @@ class LineDetector:
         self.z_per_px = (80.0 - 10.0) / float(self.bird_h - 1)  # vertical cm per px
 
         # ── Threshold params ──
-        self.th_offset = -8
+        self.th_offset = -2  # stricter: only truly dark pixels
         self.th_min = 25
         self.th_max = 80
         self.dark_margin = 24
@@ -216,6 +216,7 @@ class LineDetector:
             "shake_active_frames": 0,
             "diff_rms_px": 0.0,
             "red_bar_count": 0,
+            "narrow_gate_recent": 0,
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -897,7 +898,7 @@ class LineDetector:
         # 高斯自适应阈值（主力，对 black-hat 结果操作：线已变亮）
         adaptive_binary = cv2.adaptiveThreshold(
             gray_detect, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 31, -3  # blockSize=31, C=-3
+            cv2.THRESH_BINARY, 31, -8  # blockSize=31, C=-8 (stricter)
         )
         # Black-hat 后线变亮 → THRESH_BINARY 把线判为 255
         adaptive_mask = (adaptive_binary == 255)
@@ -1210,6 +1211,15 @@ class LineDetector:
                             narrow_gate_detected = True
                             narrow_gate_dir = 1   # exiting: mid wider
 
+            # Narrow gate exit confirmation: start-line (57cm after narrow gate)
+            narrow_gate_passed = False
+            if narrow_gate_detected or state.get("narrow_gate_recent", 0) > 0:
+                state["narrow_gate_recent"] = max(state.get("narrow_gate_recent", 0), 10)
+            if state.get("narrow_gate_recent", 0) > 0:
+                state["narrow_gate_recent"] -= 1
+            if state.get("narrow_gate_recent", 0) > 0 and black_block_score > 0.15:
+                narrow_gate_passed = True
+
             avg_conf = sum(
                 (r["conf"] * self._result_quality_weight(r)) for r in roi_results
             ) / float(len(roi_results))
@@ -1328,6 +1338,7 @@ class LineDetector:
             "narrow_gate_detected": narrow_gate_detected,
             "narrow_gate_score": narrow_gate_score,
             "narrow_gate_dir": narrow_gate_dir,
+            "narrow_gate_passed": narrow_gate_passed,
             "curve_mode": curve_mode,
         }
 
