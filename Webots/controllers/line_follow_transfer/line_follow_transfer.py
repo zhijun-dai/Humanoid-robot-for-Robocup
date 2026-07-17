@@ -307,7 +307,7 @@ def _try_apply_webots_camera_lens_and_fov(robot, camera, cfg):
         _emit_log("WARN: failed to set fieldOfView: %s" % exc)
 
 
-# Core parameters migrated from CVpart/main/main1.py
+# Core parameters migrated from openmv/main1.py
 CAM_PITCH_DEG = float(_cfg_get(SHARED_CFG, "camera.pitch_deg", 30.0))
 CAM_HEIGHT_CM = float(_cfg_get(SHARED_CFG, "camera.height_cm", 17.0))
 CAM_VFOV_DEG = float(_cfg_get(SHARED_CFG, "camera.vfov_deg", 52.0))
@@ -1446,7 +1446,7 @@ state = {
 
 
 def steer_to_route(steer_value, deadband):
-    """Mirror CVpart/main/main1.py:steer_to_cmd mapping (string -> u8).
+    """Mirror openmv/main1.py:steer_to_cmd mapping (string -> u8).
 
     Mapping: |steer|<=deadband -> 1 (go), steer>0 -> 3 (right),
              steer<-18 -> 2 (left), else -> 4 (slight_left).

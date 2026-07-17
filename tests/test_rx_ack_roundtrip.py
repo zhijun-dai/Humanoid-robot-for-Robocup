@@ -13,7 +13,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
-sys.path.insert(0, os.path.join(ROOT, "CVpart", "main"))
+sys.path.insert(0, os.path.join(ROOT, "openmv"))
 
 import protocol_v2 as p2  # type: ignore  # noqa: E402
 

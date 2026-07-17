@@ -2,7 +2,7 @@
 """Keep the two protocol_v2.py copies in sync.
 
 The protocol module deliberately lives in two places:
-- CVpart/main/protocol_v2.py        (master, runs on OpenMV)
+- openmv/protocol_v2.py        (master, runs on OpenMV)
 - Webots/controllers/line_follow_transfer/protocol_v2.py  (mirror, runs on PC)
 
 OpenMV does not always cope with symlinks on a flash filesystem, so we keep
@@ -22,7 +22,7 @@ import shutil
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-MASTER = os.path.join(REPO_ROOT, "CVpart", "main", "protocol_v2.py")
+MASTER = os.path.join(REPO_ROOT, "openmv", "protocol_v2.py")
 MIRROR = os.path.join(REPO_ROOT, "Webots", "controllers", "line_follow_transfer", "protocol_v2.py")
 
 

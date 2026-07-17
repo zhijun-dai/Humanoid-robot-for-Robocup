@@ -6,7 +6,7 @@ import cv2
 
 # ── Path ──
 _CTRL_DIR = os.path.dirname(os.path.abspath(__file__))
-_V1_DIR = os.path.join(_CTRL_DIR, "..", "..", "..", "jetson_vision")
+_V1_DIR = os.path.join(_CTRL_DIR, "..", "..", "..", "jetson")
 if _V1_DIR not in sys.path:
     sys.path.insert(0, _V1_DIR)
 

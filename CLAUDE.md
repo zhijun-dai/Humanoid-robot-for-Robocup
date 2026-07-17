@@ -12,9 +12,9 @@ RoboCup Humanoid competition — a biped robot follows a black line (white backg
 - `OpenMV_flash/main.py` — **deployment** entry: line follow + QR detect + protocol V2 (copied to OpenMV U盘)
 - `OpenMV_flash/protocol_v2.py` — comms protocol (shared with sim)
 - `OpenMV_flash/line_follow_params.json` — **real-robot** params (sim_opencv_distort: false)
-- `CVpart/main/main_webots_aligned.py` — source "master" copy aligned with Webots controller
-- `CVpart/main/main1.py` — lighter 3-ROI reference implementation
-- `CVpart/main/protocol_v2.py` — protocol V2 master source
+- `openmv/main_webots_aligned.py` — source "master" copy aligned with Webots controller
+- `openmv/main1.py` — lighter 3-ROI reference implementation
+- `openmv/protocol_v2.py` — protocol V2 master source
 
 ### Webots Simulation (CPython)
 - `Webots/worlds/Robocup.wbt` — simulation world
@@ -95,6 +95,6 @@ python tests/test_protocol_v2.py
 ## Conventions
 - All parameters loaded via `_cfg_get(SHARED_CFG, "dotted.path", default)` — JSON config drives behavior, not hardcoded constants (except the _cfg_get itself)
 - Telemetry logs use regex `TELEMETRY_RE` for structured parsing (shared between auto-tune, evaluate, iterate scripts)
-- Two parallel codebases share algorithm logic: MicroPython (OpenMV_flash) + CPython (Webots controller). Keep `protocol_v2.py` in sync between `CVpart/main/` and `OpenMV_flash/`
+- Two parallel codebases share algorithm logic: MicroPython (OpenMV_flash) + CPython (Webots controller). Keep `protocol_v2.py` in sync between `openmv/` and `OpenMV_flash/`
 - `main_webots_aligned.py` and `line_follow_transfer.py` are designed to be "aligned" — same algorithm, different pixel APIs (sensor vs raw BGRA)
 - OpenMV runs on grayscale (no red detection) unless `red_detect_on_grayscale` is explicitly enabled

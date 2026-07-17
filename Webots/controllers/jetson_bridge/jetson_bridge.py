@@ -1,4 +1,4 @@
-"""Webots 控制器 — 使用 jetson_vision 模块（仿真+真机同一套代码）
+"""Webots 控制器 — 使用 jetson 模块（仿真+真机同一套代码）
 
 与 OpenMV 的 line_follow_transfer 并列存在，不影响旧方案。
 """
@@ -6,9 +6,9 @@ from __future__ import annotations
 import json, math, os, sys, time, atexit, random
 import numpy as np
 
-# ── 路径设置：让 Webots 找到 jetson_vision 模块 ──
+# ── 路径设置：让 Webots 找到 jetson 模块 ──
 _CTRL_DIR = os.path.dirname(os.path.abspath(__file__))
-_JETSON_DIR = os.path.abspath(os.path.join(_CTRL_DIR, "..", "..", "..", "jetson_vision"))
+_JETSON_DIR = os.path.abspath(os.path.join(_CTRL_DIR, "..", "..", "..", "jetson"))
 if _JETSON_DIR not in sys.path:
     sys.path.insert(0, _JETSON_DIR)
 
@@ -96,7 +96,7 @@ right.setPosition(float("inf"))
 left.setVelocity(0.0)
 right.setVelocity(0.0)
 
-# ── jetson_vision 检测器 ──
+# ── jetson 检测器 ──
 qr = QRDetector(stable_frames=1, cooldown_ms=2000, min_edge_px=20, max_edge_px=300, debug=True)
 ld = LineDetector(cam_height_cm=CAM_HEIGHT, cam_pitch_deg=CAM_PITCH, cam_w=W, cam_h=H,
                   track_width_cm=TRACK_W_CM,

@@ -45,7 +45,7 @@ OpenMV IDE 运行脚本时默认会实时显示帧缓冲，看起来像“录视
 
 ### 2.1 手动拍照（推荐你现在用这个）
 
-使用本仓库脚本：CVpart/main/openmv_capture_photos_manual.py
+使用本仓库脚本：openmv/openmv_capture_photos_manual.py
 
 功能：
 - 手动触发，一次一张
@@ -63,7 +63,7 @@ OpenMV IDE 运行脚本时默认会实时显示帧缓冲，看起来像“录视
 
 ### 2.2 自动连拍（推荐做标定）
 
-使用本仓库脚本：CVpart/main/openmv_capture_photos.py
+使用本仓库脚本：openmv/openmv_capture_photos.py
 
 功能：
 - 自动间隔拍照
