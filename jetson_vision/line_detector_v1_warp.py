@@ -414,7 +414,7 @@ class LineDetector:
         return red_block, black_block
 
     def _detect_red_bar(self, bgr):
-        """Find red bar centroid in birdseye ROI, return (cx, cy) or None."""
+        """Find red bar in birdseye ROI, return bottom-edge (cx, cy) or None."""
         y0 = int(self.red_bar_y0_ratio * self.bird_h)
         y1 = int(self.red_bar_y1_ratio * self.bird_h)
         roi = bgr[y0:y1 + 1, :, :]
@@ -429,7 +429,7 @@ class LineDetector:
 
         ys, xs = np.where(is_red)
         cx = float(np.mean(xs))
-        cy = float(np.mean(ys)) + y0  # offset back to birdseye coords
+        cy = float(np.max(ys)) + y0  # bottom edge — closest to robot, no height bias
         return cx, cy
 
     # ═══════════════════════════════════════════════════════════
@@ -1195,16 +1195,20 @@ class LineDetector:
             # ── Narrow gate detection ──
             narrow_gate_detected = False
             narrow_gate_score = 1.0
+            narrow_gate_dir = 0  # -1=entering, +1=exiting, 0=none
             if len(roi_results) >= 2:
                 mid_width = float(far.get("lane_width_px", 140.0))
                 low_width = float(near.get("lane_width_px", 140.0))
                 if mid_width > 0 and low_width > 0:
                     narrow_gate_score = low_width / max(mid_width, 1.0)
-                    # Suppress in curves where both bands see same curve
                     curve_ok = abs(curve_px) < self.curve_switch_px * 1.3
-                    if curve_ok and (narrow_gate_score > 1.0 / self.narrow_gate_enter_ratio or
-                                     narrow_gate_score < 1.0 / self.narrow_gate_exit_ratio):
-                        narrow_gate_detected = True
+                    if curve_ok:
+                        if narrow_gate_score > 1.0 / self.narrow_gate_enter_ratio:
+                            narrow_gate_detected = True
+                            narrow_gate_dir = -1  # entering: mid narrower
+                        elif narrow_gate_score < 1.0 / self.narrow_gate_exit_ratio:
+                            narrow_gate_detected = True
+                            narrow_gate_dir = 1   # exiting: mid wider
 
             avg_conf = sum(
                 (r["conf"] * self._result_quality_weight(r)) for r in roi_results
@@ -1274,6 +1278,7 @@ class LineDetector:
             curve_mode = False
             narrow_gate_detected = False
             narrow_gate_score = 1.0
+            narrow_gate_dir = 0
 
         # ── Output ──
         dev_px = base_err_px
@@ -1321,6 +1326,7 @@ class LineDetector:
             "fused_err": state["smoothed_err"],
             "narrow_gate_detected": narrow_gate_detected,
             "narrow_gate_score": narrow_gate_score,
+            "narrow_gate_dir": narrow_gate_dir,
             "curve_mode": curve_mode,
         }
 

@@ -293,8 +293,9 @@ def main():
         _put(frame_disp, f"steer:{steer:+.1f}  curve:{1 if curve else 0}  lost:{lost}", 25)
         vs = dbg.get("vision_speed_cm_s", 0.0)
         _put(frame_disp, f"cmd:{spd:.1f}  vis:{vs:.1f} cm/s  conf:{conf:.2f}", 50)
-        rb = "RED!" if dbg.get("red_bar_detected", False) else ""
-        ng = "NARROW!" if dbg.get("narrow_gate_detected", False) else ""
+        rb = f"RED! z={dbg.get('red_bar_z_cm',0):.0f}cm" if dbg.get("red_bar_detected", False) else ""
+        nd = dbg.get("narrow_gate_dir", 0)
+        ng = "NARROW IN!" if nd < 0 else ("NARROW OUT!" if nd > 0 else "")
         extra = "  ".join(filter(None, [rb, ng]))
         _put(frame_disp, f"FL:{fl:+.1f}  FR:{fr:+.1f}  RL:{rl:+.1f}  RR:{rr:+.1f} rad/s", 75)
         if extra:
