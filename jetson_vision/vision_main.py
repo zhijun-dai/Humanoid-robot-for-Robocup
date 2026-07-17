@@ -117,22 +117,11 @@ def main():
             cv2.putText(frame, f"QR={last_qr_action}", (actual_w - 150, 70),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 180, 180), 2)
 
-        # ── 红条 (from V1 detector) ──
+        # ── 红条 (from V1 detector, viz on window 4) ──
         if dbg.get("red_bar_detected"):
             rz = dbg.get("red_bar_z_cm", 0.0)
             rx = dbg.get("red_bar_x_cm", 0.0)
             status_line += f" | RED z={rz:.0f}cm x={rx:.0f}cm"
-            # Draw red bar ROI zone (approx projection on original frame: birdseye y=160-360)
-            overlay = frame.copy()
-            roi_y0 = int(actual_h * 0.45)
-            roi_y1 = int(actual_h * 0.82)
-            cv2.rectangle(overlay, (0, roi_y0), (actual_w, roi_y1), (0, 0, 255), -1)
-            cv2.addWeighted(overlay, 0.12, frame, 0.88, 0, frame)
-            # Mark detected bottom edge
-            bar_y = int(actual_h * 0.78)
-            cv2.line(frame, (0, bar_y), (actual_w, bar_y), (0, 0, 255), 2)
-            cv2.putText(frame, f"RED {rz:.0f}cm", (actual_w // 2 - 60, bar_y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         # ── 状态栏 ──
         cv2.rectangle(frame, (0, 0), (actual_w, 28), (30, 30, 30), -1)

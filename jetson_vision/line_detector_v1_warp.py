@@ -1289,6 +1289,7 @@ class LineDetector:
         vis = self._build_visualization(
             gray, bgr_bird, roi_results, black_th, track_is_dark,
             dev_px, heading_deg, conf, base_err_px, band_mask,
+            red_bar_cx, red_bar_cy,
         )
 
         # ── Debug info ──
@@ -1368,7 +1369,7 @@ class LineDetector:
     def _build_visualization(self, gray_bird, bgr_bird,
                              roi_results, black_th, track_is_dark,
                              dev_px, heading_deg, conf, base_err_px,
-                             band_mask):
+                             band_mask, red_bar_cx=None, red_bar_cy=None):
         """Overlay detection results on the birdseye image."""
         vis = cv2.cvtColor(gray_bird, cv2.COLOR_GRAY2BGR)
 
@@ -1431,6 +1432,13 @@ class LineDetector:
         arrow_start = (self.center_x, self.bird_h - 40)
         arrow_end = (self.center_x + dx, self.bird_h - 40 + dy)
         cv2.arrowedLine(vis, arrow_start, arrow_end, (0, 255, 255), 2, tipLength=0.4)
+
+        # Red bar detection marker
+        if red_bar_cx is not None and red_bar_cy is not None and red_bar_cx > 0:
+            cx_i, cy_i = int(red_bar_cx), int(red_bar_cy)
+            cv2.circle(vis, (cx_i, cy_i), 8, (0, 0, 255), -1)
+            cv2.line(vis, (0, cy_i), (self.bird_w - 1, cy_i), (0, 0, 255), 2)
+            cv2.putText(vis, "RED", (cx_i + 12, cy_i - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
         # Text info
         font = cv2.FONT_HERSHEY_SIMPLEX
