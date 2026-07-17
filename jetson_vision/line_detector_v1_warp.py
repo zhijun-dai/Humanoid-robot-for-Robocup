@@ -91,6 +91,7 @@ class LineDetector:
         self.M = self._build_birdseye_matrix(lookahead=(10.0, 80.0))
         self.cm_per_px = self._compute_cm_per_px()
         self.z_per_px = (80.0 - 10.0) / float(self.bird_h - 1)  # vertical cm per px
+        self._asp = self.cm_per_px / self.z_per_px  # pixel aspect ratio (~1.84)
 
         # ── Threshold params ──
         self.th_offset = -2  # stricter: only truly dark pixels
@@ -183,7 +184,7 @@ class LineDetector:
         # ── Pixel domain gains（窄带适配：50px band separation, less lookahead）──
         self.pix_lookahead_gain = 0.25   # far band closer, less curvature info
         self.pix_curve_gain = 0.18       # narrower band → weaker curve signal
-        self.pix_angle_gain = 0.15       # fewer scanlines → noisier angle
+        self.pix_angle_gain = 0.15 / self._asp  # compensated: angle×gain unchanged
         self.curve_switch_px = 18.0      # ~1/3 of 50px band separation
         self.left_curve_outward_gain = 0.35
         self.left_curve_outward_px = 6.0
@@ -656,7 +657,7 @@ class LineDetector:
         dist_cm = median(zs_cm)
         width_std = stdev(lane_widths)
         a, _ = line_fit(ys, centers_px)
-        angle = math.degrees(math.atan(a))
+        angle = math.degrees(math.atan(a * self._asp))  # pixel→physical
 
         hit_ratio = len(centers_px) / float(max(1, max_rows))
         conf_raw = (conf_sum / float(max(1, len(centers_px)))) * hit_ratio
