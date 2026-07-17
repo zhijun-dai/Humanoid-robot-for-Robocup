@@ -414,7 +414,29 @@ class LineDetector:
 
         return red_block, black_block
 
-    def _detect_red_bar(self, bgr):
+    def _detect_start_line(self, gray, black_th, track_is_dark):
+        """Find horizontal black start-line position in birdseye. Returns y or None."""
+        y0 = int(self.bird_h * 0.5)
+        y1 = self.bird_h - 1
+        best_y, best_score = None, 0.0
+        step = max(1, (y1 - y0) // 20)
+        for y in range(y0, y1, step):
+            row = gray[y, :]
+            if track_is_dark:
+                is_black = row <= black_th
+            else:
+                is_black = row >= black_th
+            padded = np.concatenate(([False], is_black, [False]))
+            rises = np.where(np.diff(padded.astype(np.int8)) == 1)[0]
+            falls = np.where(np.diff(padded.astype(np.int8)) == -1)[0]
+            if len(rises) > 0:
+                longest = np.max(falls - rises + 1)
+                cover = np.sum(is_black)
+                row_score = longest / max(1, self.bird_w)
+                if row_score > 0.25 and cover > 40 and row_score > best_score:
+                    best_score = row_score
+                    best_y = y
+        return best_y
         """Find red bar in birdseye ROI, return bottom-edge (cx, cy) or None."""
         y0 = int(self.red_bar_y0_ratio * self.bird_h)
         y1 = int(self.red_bar_y1_ratio * self.bird_h)
@@ -1211,14 +1233,18 @@ class LineDetector:
                             narrow_gate_detected = True
                             narrow_gate_dir = 1   # exiting: mid wider
 
-            # Narrow gate exit confirmation: start-line (57cm after narrow gate)
-            narrow_gate_passed = False
-            if narrow_gate_detected or state.get("narrow_gate_recent", 0) > 0:
-                state["narrow_gate_recent"] = max(state.get("narrow_gate_recent", 0), 10)
-            if state.get("narrow_gate_recent", 0) > 0:
-                state["narrow_gate_recent"] -= 1
-            if state.get("narrow_gate_recent", 0) > 0 and black_block_score > 0.15:
-                narrow_gate_passed = True
+            # Start-line detection: horizontal black bar → absolute positioning
+            start_line_y = self._detect_start_line(gray_detect, black_th, track_is_dark)
+            start_line_z = 0.0
+            if start_line_y is not None:
+                _, start_line_z = self._px_to_ground_cm(float(self.center_x), float(start_line_y))
+            state["start_line_z"] = start_line_z
+            # Narrow gate distances from start line: exit=57cm before line, gate length=46cm
+            ng_exit_z = start_line_z - 57.0 if start_line_z > 0 else 0.0
+            ng_enter_z = ng_exit_z - 46.0 if ng_exit_z > 0 else 0.0
+            # robot z (low band center y=375) to nadir: ~ 10 + (399-375)*0.175 = 14cm
+            robot_z = 10.0 + (self.bird_h - 1 - 375) * self.z_per_px
+            inside_narrow = ng_enter_z > 0 and robot_z > ng_enter_z and robot_z < ng_exit_z
 
             avg_conf = sum(
                 (r["conf"] * self._result_quality_weight(r)) for r in roi_results
@@ -1338,7 +1364,10 @@ class LineDetector:
             "narrow_gate_detected": narrow_gate_detected,
             "narrow_gate_score": narrow_gate_score,
             "narrow_gate_dir": narrow_gate_dir,
-            "narrow_gate_passed": narrow_gate_passed,
+            "start_line_z": state.get("start_line_z", 0.0),
+            "ng_exit_z": ng_exit_z,
+            "ng_enter_z": ng_enter_z,
+            "inside_narrow": inside_narrow,
             "curve_mode": curve_mode,
         }
 
