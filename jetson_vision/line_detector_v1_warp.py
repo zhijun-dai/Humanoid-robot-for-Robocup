@@ -91,6 +91,7 @@ class LineDetector:
         self.M = self._build_birdseye_matrix(lookahead=(10.0, 80.0))
         self.cm_per_px = self._compute_cm_per_px()
         self.z_per_px = (80.0 - 10.0) / float(self.bird_h - 1)  # vertical cm per px
+        self.angle_scale = self.cm_per_px / self.z_per_px  # correct non-square pixels in heading
 
         # ── Threshold params ──
         self.th_offset = -2  # stricter: only truly dark pixels
@@ -656,7 +657,7 @@ class LineDetector:
         dist_cm = median(zs_cm)
         width_std = stdev(lane_widths)
         a, _ = line_fit(ys, centers_px)
-        angle = math.degrees(math.atan(a))
+        angle = math.degrees(math.atan(a * self.angle_scale))
 
         hit_ratio = len(centers_px) / float(max(1, max_rows))
         conf_raw = (conf_sum / float(max(1, len(centers_px)))) * hit_ratio
