@@ -1167,17 +1167,20 @@ class LineDetector:
                 y_arr = np.array(all_ys, dtype=np.float64)
                 x_arr = np.array(all_cx, dtype=np.float64)
                 w_sum = float(np.sum(w_arr))
-                if w_sum > 0:
+                if w_sum > 1e-9:
                     w_arr /= w_sum
-                y_mean = float(np.average(y_arr, weights=w_arr))
-                x_mean = float(np.average(x_arr, weights=w_arr))
-                num = float(np.sum(w_arr * (y_arr - y_mean) * (x_arr - x_mean)))
-                den = float(np.sum(w_arr * (y_arr - y_mean) ** 2))
-                if den > 1e-9:
-                    a = num / den
-                    angle_err = math.degrees(math.atan(a))
+                    y_mean = float(np.average(y_arr, weights=w_arr))
+                    x_mean = float(np.average(x_arr, weights=w_arr))
+                    num = float(np.sum(w_arr * (y_arr - y_mean) * (x_arr - x_mean)))
+                    den = float(np.sum(w_arr * (y_arr - y_mean) ** 2))
+                    if den > 1e-9:
+                        a = num / den
+                        angle_err = math.degrees(math.atan(a))
+                    else:
+                        angle_err = 0.5 * (near["angle"] + far["angle"])
                 else:
-                    angle_err = 0.5 * (near["angle"] + far["angle"])
+                    a, _ = line_fit(all_ys, all_cx)
+                    angle_err = math.degrees(math.atan(a))
             else:
                 if use_assist:
                     angle_err = 0.5 * (
