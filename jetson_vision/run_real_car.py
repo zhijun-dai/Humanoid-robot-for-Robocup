@@ -37,7 +37,7 @@ CAM_H    = 720
 # Detector
 CAM_HEIGHT_CM  = float(os.environ.get("CAM_HEIGHT_CM",  "40.0"))
 CAM_PITCH_DEG  = float(os.environ.get("CAM_PITCH_DEG",  "45.0"))
-CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",   "49.0"))  # 100° diag / 16:9
+CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",   "56.2"))  # 标定实测, 1920x1080
 
 # PID — dual-mode (straight / curve)
 KP_S = float(os.environ.get("JETSON_PID_STRAIGHT_KP", "0.83"))
