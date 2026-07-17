@@ -150,8 +150,8 @@ class LineDetector:
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_y0_ratio = 0.40   # y=160, far end (~52cm)
-        self.red_bar_y1_ratio = 0.90   # y=360, near end (~17cm)
+        self.red_bar_y0_ratio = 0.0    # y=0, birdseye top (~80cm)
+        self.red_bar_y1_ratio = 1.0    # y=399, birdseye bottom (~10cm)
         self.red_bar_confirm_frames = 3
 
         # ── Bottom lock ──
