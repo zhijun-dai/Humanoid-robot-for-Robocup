@@ -76,7 +76,6 @@ def main():
 
         if dev_px is not None and conf > 0.15:
             # 转弯方向判定
-            mtype = dbg.get("model_type", "?") or "?"
             if abs(heading_deg) < 4:
                 turn_text, turn_color = "STRAIGHT", (0, 255, 0)
             elif heading_deg > 0:
@@ -84,7 +83,7 @@ def main():
             else:
                 turn_text, turn_color = "<<< LEFT", (0, 200, 255)
 
-            status_line += f" | [{mtype}] dev={dev_px:+.0f}px head={heading_deg:+.0f}deg [{turn_text}] c={conf:.2f}"
+            status_line += f" | dev={dev_px:+.0f}px head={heading_deg:+.0f}deg [{turn_text}] c={conf:.2f}"
 
             # 转向指示（中央大箭头）
             cx, cy = actual_w // 2, actual_h // 2
