@@ -17,6 +17,7 @@ if _V1_DIR not in sys.path:
     sys.path.insert(0, _V1_DIR)
 
 from line_detector_v1_warp import LineDetector
+from shape_detector import ShapeDetector
 
 
 def clamp(v, lo, hi):
@@ -155,11 +156,12 @@ def main():
         actual_w, actual_h = CAM_W, CAM_H
     print(f"Camera {CAM_IDX}: requested {CAM_W}x{CAM_H}, got {actual_w}x{actual_h}")
 
-    # ── Detector ──
+    # ── Detectors ──
     ld = LineDetector(actual_w, actual_h,
         cam_height_cm=CAM_HEIGHT_CM,
         cam_pitch_deg=CAM_PITCH_DEG,
         cam_vfov_deg=CAM_VFOV_DEG)
+    sd = ShapeDetector(stable_frames=3, cooldown_ms=3200)
 
     # ── State ──
     integral      = 0.0
@@ -170,6 +172,14 @@ def main():
     last_print_t  = -99.0
     last_frame_t  = 0.0     # actual dt measurement
     t0            = None
+
+    # ── 图卡动作状态机 ──
+    # DRIVING → (检测到图卡) → ACTION(停车+动作3s) → DRIVING
+    SM_DRIVE, SM_ACTION = 0, 1
+    sm_mode = SM_DRIVE
+    sm_action_start = 0.0
+    sm_action = 0
+    sm_frame_count = 0
 
     print(f"run_real_car: {actual_w}x{actual_h}  "
           f"KP_s={KP_S:.3f} KP_c={KP_C:.3f}  "
@@ -202,24 +212,48 @@ def main():
         lost    = int(dbg.get("lost_frames", 0))
         lock_ok = bool(dbg.get("bottom_lock_valid", False))
 
+        # ── 图卡检测（隔帧跑，减少开销） ──
+        shape_action = None
+        if sm_mode == SM_DRIVE:
+            sm_frame_count += 1
+            if sm_frame_count % 3 == 0:
+                shape_action, shape_dbg = sd.update(bgr)
+                if shape_action is not None:
+                    sm_mode = SM_ACTION
+                    sm_action = shape_action
+                    sm_action_start = t
+                    print(f"[shape] >>> 检测到图卡 action={shape_action}，停车做动作")
+
         # ── Reacquisition reset ──
         if lock_ok and not last_lock_ok:
             integral = 0.0
             last_err = 0.0
         last_lock_ok = lock_ok
 
-        # ── Speed control (must be before PID, spd_f derived from actual spd) ──
-        spd = BASE_SPD
-        if lost > 0:
-            spd *= LOST_SPD
-        if conf < 0.5:
-            spd *= (0.5 + 0.5 * conf)
-        spd = max(spd, MIN_SPD)
+        # ── 图卡动作状态：停车+动作3秒 ──
+        if sm_mode == SM_ACTION:
+            if t - sm_action_start >= 3.0:
+                sm_mode = SM_DRIVE
+                integral = 0.0
+                last_err = 0.0
+                print(f"[shape] 动作{sm_action}完成，恢复巡线")
+            spd = 0.0
+            steer = 0.0
+        else:
+            # ── Speed control (must be before PID, spd_f derived from actual spd) ──
+            spd = BASE_SPD
+            if lost > 0:
+                spd *= LOST_SPD
+            if conf < 0.5:
+                spd *= (0.5 + 0.5 * conf)
+            spd = max(spd, MIN_SPD)
+
         spd_f = max(spd / 10.0, 0.5)
 
         # ── PID (dual-mode) or lost recovery ──
-
-        if lost == 0:
+        if sm_mode == SM_ACTION:
+            steer = 0.0  # 已置零，占位避免未定义
+        elif lost == 0:
             kp, ki, kd = (KP_C, KI_C, KD_C) if curve else (KP_S, KI_S, KD_S)
 
             # Speed-adaptive gains
