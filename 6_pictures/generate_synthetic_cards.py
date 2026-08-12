@@ -84,8 +84,11 @@ def _crop_to_card(img):
     return img[y0:y1 + 1, x0:x1 + 1], (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 
 
-def compose_scene(card, img_w=640, img_h=480):
+def compose_scene(card, img_w=640, img_h=480, interference="full"):
     """把图卡放到场景中：随机位置、旋转、透视、光照、噪声、模糊。
+
+    interference: "full"=全干扰(斑块+黑线+噪声+阴影), "light"=轻干扰(仅噪声),
+                  "clean"=无干扰（纯图卡+浅底）
 
     关键：所有变换在大画布上进行，变换后裁剪到外框边界，
     保证外框四角完整——外框是"检测到图卡"的第一判断依据。
@@ -136,31 +139,35 @@ def compose_scene(card, img_w=640, img_h=480):
         new_h, new_w = card.shape
 
     # 5. 随机位置（不出界）
+    # 图卡贴地面，摄像头斜视→总在画面中下部（下3/4 ROI内）
     x0 = random.randint(0, max(1, img_w - new_w))
-    y0 = random.randint(0, max(1, img_h - new_h))
+    y_min = int(img_h * 0.05)
+    y_max = max(y_min + 1, int(img_h * 0.60))
+    y0 = random.randint(y_min, min(y_max, max(1, img_h - new_h)))
 
     # 6. 场景：浅灰白底（模拟喷绘布）
     scene = np.ones((img_h, img_w), dtype=np.uint8) * random.randint(220, 250)
 
-    # 6b. 大尺度灰白斑块（像地形图/贴纸，低频变化）— 70%概率
-    if random.random() < 0.7:
-        low_res = np.random.randn(max(2, img_w // 24), max(2, img_h // 24)).astype(np.float32)
-        patch = cv2.resize(low_res, (img_w, img_h), interpolation=cv2.INTER_LINEAR)
-        patch = patch / max(patch.std(), 1e-6) * random.uniform(15, 35)
-        scene = np.clip(scene.astype(np.float32) + patch, 0, 255).astype(np.uint8)
+    if interference in ("full", "light"):
+        # 6b. 大尺度灰白斑块（像地形图/贴纸，低频变化）— 仅full，70%概率
+        if interference == "full" and random.random() < 0.7:
+            low_res = np.random.randn(max(2, img_w // 24), max(2, img_h // 24)).astype(np.float32)
+            patch = cv2.resize(low_res, (img_w, img_h), interpolation=cv2.INTER_LINEAR)
+            patch = patch / max(patch.std(), 1e-6) * random.uniform(15, 35)
+            scene = np.clip(scene.astype(np.float32) + patch, 0, 255).astype(np.uint8)
 
-    # 6c. 赛道梯形黑线（近大远小，两条线呈梯形收敛）— 60%概率
-    if random.random() < 0.6:
-        cx_line = img_w // 2
-        half_bottom = random.uniform(img_w * 0.15, img_w * 0.25)
-        half_top = random.uniform(img_w * 0.04, img_w * 0.10)
-        y_far, y_near = int(img_h * 0.15), img_h
-        lw = random.randint(6, 12)
-        for y in range(y_far, y_near, 2):
-            t = (y - y_far) / max(1, y_near - y_far)
-            half = half_top + (half_bottom - half_top) * t
-            cv2.line(scene, (int(cx_line - half), y), (int(cx_line - half), y), 0, lw)
-            cv2.line(scene, (int(cx_line + half), y), (int(cx_line + half), y), 0, lw)
+        # 6c. 赛道梯形黑线（近大远小，两条线呈梯形收敛）— 仅full，60%概率
+        if interference == "full" and random.random() < 0.6:
+            cx_line = img_w // 2
+            half_bottom = random.uniform(img_w * 0.15, img_w * 0.25)
+            half_top = random.uniform(img_w * 0.04, img_w * 0.10)
+            y_far, y_near = int(img_h * 0.15), img_h
+            lw = random.randint(6, 12)
+            for y in range(y_far, y_near, 2):
+                t = (y - y_far) / max(1, y_near - y_far)
+                half = half_top + (half_bottom - half_top) * t
+                cv2.line(scene, (int(cx_line - half), y), (int(cx_line - half), y), 0, lw)
+                cv2.line(scene, (int(cx_line + half), y), (int(cx_line + half), y), 0, lw)
 
     scene[y0:y0 + new_h, x0:x0 + new_w] = card
 
@@ -169,10 +176,12 @@ def compose_scene(card, img_w=640, img_h=480):
     contrast = random.uniform(0.9, 1.1)
     scene = cv2.convertScaleAbs(scene, alpha=contrast, beta=(brightness - 1) * 128)
 
-    # 8. 高斯噪声 + 模糊
-    noise = np.random.normal(0, random.uniform(2, 5), scene.shape)
+    # 8. 高斯噪声 + 模糊（clean模式仅轻微噪声）
+    noise_amp = random.uniform(2, 5) if interference != "clean" else random.uniform(1, 2)
+    noise = np.random.normal(0, noise_amp, scene.shape)
     scene = np.clip(scene.astype(np.float32) + noise, 0, 255).astype(np.uint8)
-    if random.random() < 0.25:
+    blur_p = 0.25 if interference != "clean" else 0.1
+    if random.random() < blur_p:
         scene = cv2.GaussianBlur(scene, (3, 3), 0)
 
     # 9. 转BGR（YOLO训练通常用RGB/BGR三通道）
@@ -193,6 +202,9 @@ def main():
                         help="输出目录（追加不覆盖，历史批次保留）")
     parser.add_argument("--size", type=int, default=640,
                         help="场景尺寸（宽）")
+    parser.add_argument("--mode", type=str, default="full",
+                        choices=["full", "light", "clean"],
+                        help="干扰强度: full=斑块+黑线+噪声, light=仅噪声, clean=无干扰")
     args = parser.parse_args()
 
     img_w = args.size
@@ -217,7 +229,8 @@ def main():
     for shape_idx, (name, cls_id, action) in enumerate(SHAPES):
         for i in range(args.count):
             card = render_card(shape_idx, size=256)
-            scene, yolo_line = compose_scene(card, img_w, img_h)
+            scene, yolo_line = compose_scene(card, img_w, img_h,
+                                             interference=args.mode)
             fname = f"{name}_{i:05d}"
             # imencode+tofile 支持中文路径（cv2.imwrite 不支持）
             ext = ".jpg"

@@ -23,12 +23,15 @@ class ShapeDetector:
         cooldown_ms=3200,       # 发送冷却
         min_edge_px=30,         # 图卡最小边长（像素）
         max_edge_px=500,        # 图卡最大边长
+        roi_ratio=0.75,         # 检测ROI：画面下roi_ratio区域（图卡贴地面，
+                                # 摄像头斜视时总在画面下方；排除上方干扰）
         debug=True,
     ):
         self.stable_frames = stable_frames
         self.cooldown_ms = cooldown_ms
         self.min_edge = min_edge_px
         self.max_edge = max_edge_px
+        self.roi_ratio = roi_ratio
         self.debug = debug
 
         # 动作映射: shape_name -> action_number (1-6)
@@ -61,6 +64,15 @@ class ShapeDetector:
         else:
             gray = bgr_or_gray
 
+        # ROI裁剪：只检测画面下 roi_ratio 区域（排除上方干扰）
+        if self.roi_ratio < 1.0:
+            h = gray.shape[0]
+            y0 = int(h * (1.0 - self.roi_ratio))
+            gray = gray[y0:, :]
+            self._roi_y0 = y0
+        else:
+            self._roi_y0 = 0
+
         # 预处理：CLAHE + 二值化（白底黑线，THRESH_BINARY_INV: 线=白）
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
@@ -70,7 +82,8 @@ class ShapeDetector:
         # 找图卡外框（10cm矩形）
         card_quad = self._find_card_quad(binary)
         shape = None
-        dbg = {"card_found": card_quad is not None}
+        dbg = {"card_found": card_quad is not None,
+               "roi_y0": self._roi_y0, "roi_ratio": self.roi_ratio}
 
         if card_quad is not None:
             # 单应性矫正为正视图
