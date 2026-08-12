@@ -97,11 +97,14 @@ class ShapeDetector:
     # ═══════════════════════════════════════════════════════════
 
     def _find_card_quad(self, binary):
-        """找图卡外框：面积最大的近似正方形轮廓，返回4角点(顺时针)。"""
+        """找图卡外框：所有4顶点候选中最优者。
+
+        关键：真图卡外框是"空心环"——填充其内部后，环内还有内部形状的
+        非白像素（验证通过）。黑线/斑块是实心条，填充后内部没有形状。
+        """
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
-        best = None
-        best_area = 0
+        candidates = []
         for c in contours:
             area = cv2.contourArea(c)
             if area < self.min_edge * self.min_edge:
@@ -117,10 +120,29 @@ class ShapeDetector:
             aspect = max(w, h) / max(min(w, h), 1)
             if aspect > 1.4:
                 continue
-            if area > best_area:
-                best_area = area
-                best = approx.reshape(-1, 2)
-        return best
+            quad = approx.reshape(-1, 2)
+            # 环验证：填充四边形内部，内部应有形状（非外框线本身）
+            if self._is_ring_with_content(binary, quad, area):
+                candidates.append((area, quad))
+        if not candidates:
+            return None
+        # 取面积最大的通过验证的候选
+        candidates.sort(key=lambda t: -t[0])
+        return candidates[0][1]
+
+    def _is_ring_with_content(self, binary, quad, outer_area):
+        """验证四边形是空心环且内部有内容（图卡外框特征）。"""
+        h, w = binary.shape
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(mask, [quad.astype(np.int32)], -1, 255, cv2.FILLED)
+        inner = cv2.bitwise_and(binary, mask)
+        # 内部非白像素（形状线）占比：环形区域约25-75%
+        inner_area = np.count_nonzero(inner)
+        if inner_area <= 0:
+            return False
+        ratio = inner_area / max(outer_area, 1.0)
+        # 实心条：ratio≈1.0；空心环+内部形状：ratio≈0.3-0.75
+        return 0.15 < ratio < 0.9
 
     def _warp_card(self, binary, quad):
         """4角点 → 200×200 正视图（逆时针排序，保证内形状不镜像）。"""

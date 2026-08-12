@@ -116,13 +116,17 @@ def compose_scene(card, img_w=640, img_h=480):
     card, _ = _crop_to_card(big)
     new_h, new_w = card.shape
 
-    # 4. 透视（50%概率）— 模拟斜视；变换后同样裁剪保外框完整
-    if random.random() < 0.5:
+    # 4. 透视（85%概率）— 模拟摄像头45°俯视地面：远端(上边)收缩，近端(下边)不变
+    if random.random() < 0.85:
+        # 远边收缩量（梯形变形强度）：10%~35%宽度
+        dx_far = random.uniform(new_w * 0.10, new_w * 0.35)
+        # 远端整体上移（俯视时远边更高）
+        dy_far = random.uniform(0, new_h * 0.08)
         src = np.float32([[0, 0], [new_w, 0], [new_w, new_h], [0, new_h]])
-        dx = random.uniform(0, new_w * 0.06)
-        dy = random.uniform(0, new_h * 0.05)
-        dst = np.float32([[dx, dy], [new_w - dx * 0.5, 0],
-                          [new_w, new_h], [0, new_h - dy * 0.5]])
+        dst = np.float32([[dx_far, dy_far],
+                          [new_w - dx_far, dy_far],
+                          [new_w, new_h],
+                          [0, new_h]])
         M2 = cv2.getPerspectiveTransform(src, dst)
         warped = cv2.warpPerspective(card, M2, (new_w, new_h),
                                      flags=cv2.INTER_CUBIC,
@@ -135,10 +139,28 @@ def compose_scene(card, img_w=640, img_h=480):
     x0 = random.randint(0, max(1, img_w - new_w))
     y0 = random.randint(0, max(1, img_h - new_h))
 
-    # 6. 场景：浅灰白底（模拟喷绘布，略偏灰 + 亮度不均）
+    # 6. 场景：浅灰白底（模拟喷绘布）
     scene = np.ones((img_h, img_w), dtype=np.uint8) * random.randint(220, 250)
-    grad = np.linspace(0, random.randint(5, 25), img_w, dtype=np.float32)
-    scene = np.clip(scene.astype(np.float32) + grad[None, :], 0, 255).astype(np.uint8)
+
+    # 6b. 大尺度灰白斑块（像地形图/贴纸，低频变化）— 70%概率
+    if random.random() < 0.7:
+        low_res = np.random.randn(max(2, img_w // 24), max(2, img_h // 24)).astype(np.float32)
+        patch = cv2.resize(low_res, (img_w, img_h), interpolation=cv2.INTER_LINEAR)
+        patch = patch / max(patch.std(), 1e-6) * random.uniform(15, 35)
+        scene = np.clip(scene.astype(np.float32) + patch, 0, 255).astype(np.uint8)
+
+    # 6c. 赛道梯形黑线（近大远小，两条线呈梯形收敛）— 60%概率
+    if random.random() < 0.6:
+        cx_line = img_w // 2
+        half_bottom = random.uniform(img_w * 0.15, img_w * 0.25)
+        half_top = random.uniform(img_w * 0.04, img_w * 0.10)
+        y_far, y_near = int(img_h * 0.15), img_h
+        lw = random.randint(6, 12)
+        for y in range(y_far, y_near, 2):
+            t = (y - y_far) / max(1, y_near - y_far)
+            half = half_top + (half_bottom - half_top) * t
+            cv2.line(scene, (int(cx_line - half), y), (int(cx_line - half), y), 0, lw)
+            cv2.line(scene, (int(cx_line + half), y), (int(cx_line + half), y), 0, lw)
 
     scene[y0:y0 + new_h, x0:x0 + new_w] = card
 
@@ -168,20 +190,25 @@ def main():
     parser.add_argument("--count", type=int, default=500,
                         help="每类生成数量（默认500，共3000张）")
     parser.add_argument("--out", type=str, default="synthetic_dataset",
-                        help="输出目录")
+                        help="输出目录（追加不覆盖，历史批次保留）")
     parser.add_argument("--size", type=int, default=640,
                         help="场景尺寸（宽）")
     args = parser.parse_args()
 
     img_w = args.size
     img_h = int(img_w * 0.75)
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.out)
+
+    # 每次生成一个时间戳批次目录，保留历史数据（累积丰富性）
+    import time as _time
+    batch = _time.strftime("%Y%m%d_%H%M%S")
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.out)
+    out_dir = os.path.join(base_dir, f"batch_{batch}")
     images_dir = os.path.join(out_dir, "images")
     labels_dir = os.path.join(out_dir, "labels")
     os.makedirs(images_dir, exist_ok=True)
     os.makedirs(labels_dir, exist_ok=True)
 
-    # 写数据集yaml
+    # 写数据集yaml（指向本次批次）
     with open(os.path.join(out_dir, "dataset.yaml"), "w", encoding="utf-8") as f:
         f.write(f"path: {out_dir}\ntrain: images\nval: images\n{YAML}")
 
