@@ -147,6 +147,9 @@ class ShapeDetector:
 
     def _classify_shape(self, warp):
         """在矫正后的正视图上分类形状。"""
+        # 闭运算连接细臂断裂（十字的臂在低分辨率下易断）
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        warp = cv2.morphologyEx(warp, cv2.MORPH_CLOSE, kernel)
         # RETR_LIST: 需要内部嵌套形状（外框环内），EXTERNAL 拿不到
         contours, _ = cv2.findContours(warp, cv2.RETR_LIST,
                                        cv2.CHAIN_APPROX_SIMPLE)
@@ -203,14 +206,26 @@ class ShapeDetector:
         approx = cv2.approxPolyDP(contour, 0.035 * peri, True)
         n_vertices = len(approx)
 
-        # 圆形：圆形度高 + 顶点多（透视下圆形度略降，用顶点数防正方形误判）
-        if circularity > 0.78 and n_vertices >= 6:
-            return "circle"
+        # 圆形：轮廓点到质心距离的变异系数（对锯齿不敏感）
+        # 圆 CV≈0.05-0.1，正方形/菱形≈0.22，五角星/十字更大
+        # 必须在顶点数>=6时判定（正方形/菱形4顶点不会误判）
+        if n_vertices >= 6:
+            M = cv2.moments(contour)
+            if M["m00"] > 0:
+                cx_m = M["m10"] / M["m00"]
+                cy_m = M["m01"] / M["m00"]
+                dists = np.sqrt((contour[:, 0, 0] - cx_m) ** 2
+                                + (contour[:, 0, 1] - cy_m) ** 2)
+                cv_dist = float(np.std(dists) / max(np.mean(dists), 1e-6))
+                if cv_dist < 0.15:
+                    return "circle"
 
-        # 凸性：凸包面积 / 轮廓面积（凹形 > 1.15）
+        # 凸性：凸包面积 / 轮廓面积（凹形 > 1.12）
         hull = cv2.convexHull(contour)
         hull_area = cv2.contourArea(hull)
         concavity = hull_area / max(area, 1.0)
+        hull_approx = cv2.approxPolyDP(hull, 0.035 * peri, True)
+        n_hull = len(hull_approx)
 
         if n_vertices == 3:
             return "triangle"
@@ -226,11 +241,12 @@ class ShapeDetector:
         if n_vertices == 5:
             return "pentagon"  # 凸五边形
         if n_vertices >= 8 and concavity > 1.12:
-            # 凹形多顶点：五角星 vs 十字 → 凸性深度区分
-            # 真实图卡实测：五角星 concav≈1.76，十字 concav≈4.5（毛刺多）
-            if concavity > 2.0:
-                return "cross"
-            return "pentagon"
+            # 凹形多顶点：五角星 vs 十字
+            # 五角星：凸包=5 + 凸性适中（合成1.61/真实1.76）
+            # 十字：凸包≠5（合成8）或深凹（真实4.5）
+            if n_hull == 5 and concavity < 2.5:
+                return "pentagon"
+            return "cross"
         return None
 
     # ═══════════════════════════════════════════════════════════
