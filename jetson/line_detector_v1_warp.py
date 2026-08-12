@@ -117,6 +117,8 @@ class LineDetector:
         # ── Narrow gate detection ──
         self.narrow_gate_enter_ratio = 0.85
         self.narrow_gate_exit_ratio = 1.15
+        self.narrow_red_close_z_cm = 35.0    # red bar z < this → exiting
+        self.narrow_line_close_z_cm = 50.0   # start line z < this → exiting
 
         # ── Simple Bottom Mode ──
         self.simple_bottom_mode = True
@@ -198,6 +200,7 @@ class LineDetector:
         self.robust_decay_frames = 8
 
         # ── Internal state ──
+        self.optical_flow_enable = False  # disable by default
         self._prev_gray = None       # optical flow frame buffer
         self._speed_smooth = 0.0     # EMA smoothed visual speed (cm/s)
         self._omega_smooth = 0.0     # EMA smoothed visual omega (rad/s)
@@ -455,7 +458,7 @@ class LineDetector:
 
         ys, xs = np.where(is_red)
         cx = float(np.mean(xs))
-        cy = float(np.max(ys)) + y0  # bottom edge — closest to robot, no height bias
+        cy = float(np.mean(ys)) + y0  # centroid
         return cx, cy
 
     # ═══════════════════════════════════════════════════════════
@@ -1073,6 +1076,14 @@ class LineDetector:
                 state["red_bar_count"] = max(state["red_bar_count"] - 1, 0)
         red_bar_detected = state["red_bar_count"] >= self.red_bar_confirm_frames
 
+        # Defaults for lost-frame path
+        ng_exit_z = 0.0
+        ng_enter_z = 0.0
+        inside_narrow = False
+        ratio_out = False
+        red_visible = False
+        line_visible = False
+
         # ── Pixel-domain error fusion ──
         if roi_results:
             state["lost_frames"] = 0
@@ -1219,35 +1230,51 @@ class LineDetector:
             curve_px = far_err_px - near_err_px
 
             # ── Narrow gate detection ──
+            # Entering: width ratio shows "out" (mid wider) + red visible + start line visible
+            # Exiting:  red bar close OR start line close
             narrow_gate_detected = False
             narrow_gate_score = 1.0
             narrow_gate_dir = 0  # -1=entering, +1=exiting, 0=none
+
+            # Width ratio (spatial diff between mid and low bands)
+            ratio_out = False  # "out" pattern: mid wider than low
             if len(roi_results) >= 2:
                 mid_width = float(far.get("lane_width_px", 140.0))
                 low_width = float(near.get("lane_width_px", 140.0))
                 if mid_width > 0 and low_width > 0:
                     narrow_gate_score = low_width / max(mid_width, 1.0)
                     curve_ok = abs(curve_px) < self.curve_switch_px * 1.3
-                    if curve_ok:
-                        if narrow_gate_score > 1.0 / self.narrow_gate_enter_ratio:
-                            narrow_gate_detected = True
-                            narrow_gate_dir = -1  # entering: mid narrower
-                        elif narrow_gate_score < 1.0 / self.narrow_gate_exit_ratio:
-                            narrow_gate_detected = True
-                            narrow_gate_dir = 1   # exiting: mid wider
+                    if curve_ok and narrow_gate_score < 1.0 / self.narrow_gate_exit_ratio:
+                        ratio_out = True  # mid > low: approaching/entering pattern
 
             # ── Narrow gate positioning: dual verification (red bar + start line) ──
             # Layout: narrow gate exit --24cm--> red bar --36cm--> start line
-            #   ng_exit → start_line = 60cm
             start_line_y = self._detect_start_line(gray_detect, black_th, track_is_dark)
             start_line_z = 0.0
+            line_visible = False
             if start_line_y is not None:
                 _, start_line_z = self._px_to_ground_cm(float(self.center_x), float(start_line_y))
+                line_visible = start_line_z > 0
+
+            red_visible = red_bar_detected and red_bar_z_cm > 0
+            red_close = red_visible and red_bar_z_cm < self.narrow_red_close_z_cm
+            line_close = line_visible and start_line_z < self.narrow_line_close_z_cm
+
+            # Entering: ratio shows out + red visible + line visible (triple confirm)
+            if ratio_out and red_visible and line_visible:
+                narrow_gate_detected = True
+                narrow_gate_dir = -1
+
+            # Exiting: red bar or start line close to camera bottom
+            if red_close or line_close:
+                narrow_gate_detected = True
+                narrow_gate_dir = 1
+
             state["start_line_z"] = start_line_z
 
             ng_exit_z = 0.0
             ng_enter_z = 0.0
-            ng_conf = 0  # 0=none, 1=single source, 2=dual confirmed
+            ng_conf = 0
 
             # Source A: red bar → ng_exit = red_z + 24cm
             ng_from_red = (red_bar_z_cm + 24.0) if (red_bar_detected and red_bar_z_cm > 0) else 0.0
@@ -1257,9 +1284,9 @@ class LineDetector:
             if ng_from_red > 0 and ng_from_line > 0:
                 if abs(ng_from_red - ng_from_line) < 15.0:
                     ng_exit_z = 0.5 * (ng_from_red + ng_from_line)
-                    ng_conf = 2  # dual confirmed
+                    ng_conf = 2
                 else:
-                    ng_exit_z = ng_from_red  # prefer red (closer, less extrapolation)
+                    ng_exit_z = ng_from_red
                     ng_conf = 1
             elif ng_from_red > 0:
                 ng_exit_z = ng_from_red
@@ -1269,7 +1296,7 @@ class LineDetector:
                 ng_conf = 1
 
             if ng_exit_z > 0:
-                ng_enter_z = max(ng_exit_z - 46.0, 0.0)  # gate ~46cm long
+                ng_enter_z = max(ng_exit_z - 46.0, 0.0)
 
             # Cross-validate red bar distance against start line
             if red_bar_detected and start_line_z > 0:
@@ -1399,6 +1426,9 @@ class LineDetector:
             "narrow_gate_detected": narrow_gate_detected,
             "narrow_gate_score": narrow_gate_score,
             "narrow_gate_dir": narrow_gate_dir,
+            "narrow_ratio_out": ratio_out,
+            "narrow_red_visible": red_visible,
+            "narrow_line_visible": line_visible,
             "start_line_z": state.get("start_line_z", 0.0),
             "ng_exit_z": ng_exit_z,
             "ng_enter_z": ng_enter_z,
@@ -1407,7 +1437,7 @@ class LineDetector:
         }
 
         # ── Optical flow speed estimation (on raw gray birdseye) ──
-        if self._prev_gray is not None:
+        if self.optical_flow_enable and self._prev_gray is not None:
             # Farneback dense flow: bottom 150 rows only
             flow = cv2.calcOpticalFlowFarneback(
                 self._prev_gray, gray, None,
