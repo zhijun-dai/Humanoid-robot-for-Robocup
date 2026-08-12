@@ -226,11 +226,11 @@ class ShapeDetector:
         if n_vertices == 5:
             return "pentagon"  # 凸五边形
         if n_vertices >= 8 and concavity > 1.12:
-            # 凹形多顶点：五角星(10) vs 十字(12) → 圆形度区分
-            # 实测：五角星 circ≈0.36 更凹，十字 circ≈0.62 更"圆"
-            if circularity < 0.45:
-                return "pentagon"
-            return "cross"
+            # 凹形多顶点：五角星 vs 十字 → 凸性深度区分
+            # 真实图卡实测：五角星 concav≈1.76，十字 concav≈4.5（毛刺多）
+            if concavity > 2.0:
+                return "cross"
+            return "pentagon"
         return None
 
     # ═══════════════════════════════════════════════════════════
