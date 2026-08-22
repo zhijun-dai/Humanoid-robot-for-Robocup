@@ -77,3 +77,8 @@ Webots/worlds/.*.wbproj
 # 杂散生成文件
 .openmv_disk
 README.txt
+
+# 合成数据集（大文件不入库，用生成器重新生成）
+6_pictures/synthetic_dataset/
+6_pictures/test_synthetic/
+6_pictures/test_synthetic2/
