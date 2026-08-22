@@ -1,55 +1,55 @@
-"""图卡检测预处理 — YOLO输入前的传统CV处理（方案A：固定工作分辨率）。
+"""图卡检测预处理 — YOLO输入前（照搬巡线完整管线版）。
 
-目的: 真实场景帧（彩色/光照不均/复杂背景）→ 白底黑线的统一表示，
-接近合成训练数据分布（训练数据是白底黑线渲染），弥补数据不足。
+本分支 = 完整照搬 line_detector_v1_warp.py 的预处理（含black_th二次阈值、
+形态学4步、连通域过滤），仅连通域阈值按分辨率比例调整。
 
-管线（模仿巡线 blackhat+自适应阈值，简化版，不做鸟瞰）:
-    输入帧(任意分辨率) → resize到960×540 → 灰度
-    → blackhat(31×31椭圆，抑制宽阴影/增强细黑线)
-    → 自适应阈值(GAUSSIAN, blockSize=31, C=-12)
-    → 反转成白底黑线（训练分布；blackhat输出是黑底白线）
-    → 形态学: 闭运算(3×3) → 开运算(3×3)
-    → BGR3通道 → YOLO
-
-参数来源与实测:
-    - blackhat核31×31椭圆、自适应块31: 照搬巡线(line_detector_v1_warp.py)
-    - C=-12: 实测标定。巡线C=-8在鸟瞰(320×400)上，本模块960×540原图上
-      更负的C保留图卡细线更完整。白底黑线下C∈{-8,-12,-16}检出率
-      83%/88%/83%，取-12
-    - 形态学简化为开闭各1次(3×3): 巡线是close5→open5→close5→open3，
-      实测对图卡细线无增益；巡线的连通域过滤会删掉图卡细线小连通域，
-      实测致命(88%→21%)，故不采用
-    - 输出必须白底黑线: 训练数据是白底黑线，方向反了检出率62%→88%
+实测检出率21%（对比main分支简化版88%）——保留本分支供继续调参。
 """
 import cv2
 import numpy as np
 
-# ── 固定工作分辨率（方案A：参数与分辨率解耦）──
+# ── 固定工作分辨率（方案A）──
 WORK_W = 960
 WORK_H = 540
 
-# ── 固定预处理参数（实测标定）──
+# ── 预处理参数：照搬巡线（line_detector_v1_warp.py 914-957行）──
+# 巡线工作分辨率 320×400，本模块 960×540 → 面积比≈4倍
+# 连通域过滤阈值按面积比例调整（300→1200, 80→110）
 BH_KERNEL = 31          # blackhat核（椭圆，巡线同款）
 ADAPTIVE_BLOCK = 31     # 自适应阈值窗口（巡线同款）
-ADAPTIVE_C = -12        # 阈值偏移（实测最优88%）
-MORPH_KERNEL = 3        # 形态学核（简化：开闭各1次）
+ADAPTIVE_C = -8         # 阈值偏移（巡线同款）
+TH_OFFSET = -2          # black_th = median(mask) + offset（巡线同款）
+TH_MIN = 25             # black_th 限幅（巡线同款）
+TH_MAX = 80
+CC_AREA_MIN = 1200      # 连通域过滤（巡线300 × 面积比4）
+CC_HEIGHT_MIN = 110     # 连通域过滤（巡线80 × 高比1.35）
 
 
 def preprocess_for_yolo(bgr, invert=False, save_debug=None,
                         method="adaptive"):
     """真实帧 → YOLO友好的白底黑线图（3通道BGR，960×540）。
 
+    管线（照搬巡线 line_detector_v1_warp.py 预处理，含全部4步形态学）:
+        resize到960×540 → 灰度
+        → blackhat(31×31椭圆)
+        → 自适应阈值(GAUSSIAN, 31, C=-8) 取线mask
+        → black_th = median(mask)+(-2), clamp(25,80)
+        → 二值化 threshold(gray_detect, black_th)
+        → CLOSE(5×5椭圆) → OPEN(5×5) → CLOSE(5×5) → OPEN(3×3)
+        → 连通域过滤（area/heigh按分辨率比例调整）
+        → 反转成白底黑线（训练分布）→ BGR3通道 → YOLO
+
     Args:
         bgr: 彩色帧 (任意分辨率, H, W, 3)
         invert: 额外反转（黑底白线），默认False
         save_debug: 若给路径，保存中间结果图（调试用）
-        method: "adaptive"=blackhat+自适应阈值（默认，抗光照不均）
-                "otsu"=CLAHE+Otsu全图阈值（备用，光照均匀场景）
+        method: "adaptive"=巡线同款管线（默认）
+                "otsu"=CLAHE+Otsu全图阈值（备用）
 
     Returns:
         (540, 960, 3) BGR图，喂给YOLO
     """
-    # 0. 统一到固定工作分辨率（方案A）
+    # 0. 统一到固定工作分辨率（方案A：参数与分辨率解耦）
     if bgr.shape[1] != WORK_W or bgr.shape[0] != WORK_H:
         bgr = cv2.resize(bgr, (WORK_W, WORK_H))
 
@@ -62,26 +62,35 @@ def preprocess_for_yolo(bgr, invert=False, save_debug=None,
         _, bw = cv2.threshold(enhanced, 0, 255,
                               cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         bw = 255 - bw  # 白底黑线
+        bw = _morphology_and_cc(bw)
     else:
-        # 主力：blackhat + 自适应阈值（模仿巡线，抗光照不均）
-        # blackhat = closing(src) - src：提取比周围暗的细线条
-        # 图卡黑色外框+图形线被提取；背景大尺度明暗变化被抑制
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
-                                           (BH_KERNEL, BH_KERNEL))
-        blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
-        # 自适应阈值：局部亮度归一化，克服反光/阴影
-        bw = cv2.adaptiveThreshold(blackhat, 255,
-                                   cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                   cv2.THRESH_BINARY,
-                                   ADAPTIVE_BLOCK, ADAPTIVE_C)
-        # 反转成白底黑线（训练分布；blackhat输出是黑底白线）
-        bw = 255 - bw
+        # 照搬巡线预处理（line_detector_v1_warp.py 914-957行）
+        # 1. blackhat：抑制宽阴影、增强细黑线→变亮
+        k31 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                        (BH_KERNEL, BH_KERNEL))
+        gray_detect = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, k31)
 
-    # 形态学：闭运算连断裂 → 开运算去噪（各1次）
-    k = cv2.getStructuringElement(cv2.MORPH_RECT,
-                                  (MORPH_KERNEL, MORPH_KERNEL))
-    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k)
-    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k)
+        # 2. 自适应阈值（Gaussian，巡线同款 C=-8）
+        adaptive_binary = cv2.adaptiveThreshold(
+            gray_detect, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, ADAPTIVE_BLOCK, ADAPTIVE_C)
+        # blackhat后线变亮 → THRESH_BINARY 把线判为255
+        adaptive_mask = (adaptive_binary == 255)
+        if np.count_nonzero(adaptive_mask) > 100:
+            black_th = np.median(gray_detect[adaptive_mask]) + TH_OFFSET
+        else:
+            black_th = np.median(gray_detect) + TH_OFFSET
+        black_th = float(np.clip(black_th, TH_MIN, TH_MAX))
+
+        # 3. 二值化（线区域 → 255）
+        bw = cv2.threshold(gray_detect, black_th, 255,
+                           cv2.THRESH_BINARY)[1]
+
+        # 4. 形态学4步（巡线同款：close5→open5→close5→open3）
+        bw = _morphology_and_cc(bw)
+
+        # 5. 反转成白底黑线（训练分布；blackhat输出是黑底白线）
+        bw = 255 - bw
 
     if invert:
         bw = 255 - bw
@@ -91,6 +100,26 @@ def preprocess_for_yolo(bgr, invert=False, save_debug=None,
 
     # 转回3通道（YOLO输入要求）
     return cv2.cvtColor(bw, cv2.COLOR_GRAY2BGR)
+
+
+def _morphology_and_cc(bw):
+    """照搬巡线的形态学4步 + 连通域过滤。"""
+    k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k5, iterations=1)
+    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k5, iterations=1)
+    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k5, iterations=1)
+    k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k3, iterations=1)
+
+    # 连通域过滤（阈值按分辨率比例调整）
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        bw, connectivity=8)
+    for label_id in range(1, num_labels):
+        area = stats[label_id, cv2.CC_STAT_AREA]
+        h = stats[label_id, cv2.CC_STAT_HEIGHT]
+        if area < CC_AREA_MIN or h < CC_HEIGHT_MIN:
+            bw[labels == label_id] = 0
+    return bw
 
 
 if __name__ == "__main__":
