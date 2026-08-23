@@ -17,7 +17,7 @@ WORK_H = 540
 # 连通域过滤阈值按面积比例调整（300→1200, 80→110）
 BH_KERNEL = 31          # blackhat核（椭圆，巡线同款）
 ADAPTIVE_BLOCK = 31     # 自适应阈值窗口（巡线同款）
-ADAPTIVE_C = -8         # 阈值偏移（巡线同款）
+ADAPTIVE_C = -12        # 阈值偏移（原-8，调参中）
 TH_OFFSET = -2          # black_th = median(mask) + offset（巡线同款）
 TH_MIN = 25             # black_th 限幅（巡线同款）
 TH_MAX = 80
@@ -103,22 +103,9 @@ def preprocess_for_yolo(bgr, invert=False, save_debug=None,
 
 
 def _morphology_and_cc(bw):
-    """照搬巡线的形态学4步 + 连通域过滤。"""
-    k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k5, iterations=1)
-    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k5, iterations=1)
-    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k5, iterations=1)
+    """形态学：close(3×3) 一次，无开运算（几何计算推荐）。"""
     k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, k3, iterations=1)
-
-    # 连通域过滤（阈值按分辨率比例调整）
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-        bw, connectivity=8)
-    for label_id in range(1, num_labels):
-        area = stats[label_id, cv2.CC_STAT_AREA]
-        h = stats[label_id, cv2.CC_STAT_HEIGHT]
-        if area < CC_AREA_MIN or h < CC_HEIGHT_MIN:
-            bw[labels == label_id] = 0
+    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k3, iterations=1)
     return bw
 
 
