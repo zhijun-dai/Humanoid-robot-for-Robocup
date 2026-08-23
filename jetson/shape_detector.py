@@ -24,6 +24,11 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+# 固定工作分辨率（参数标定基准，与YOLO方案A一致）
+WORK_W = 960
+WORK_H = 540
+
+
 class ShapeDetector:
     def __init__(
         self,
@@ -40,7 +45,7 @@ class ShapeDetector:
         # ── 找框参数（集中管理）──
         self.cfg = {
             # 线宽选择性预处理
-            "bh_kernel": 9,          # blackhat核 ≈2×图卡线宽(3-5px)；巡线10-20px>核→响应≈0
+            "bh_kernel": 9,          # 线宽选择性：只增强<核的细线（找框目标）
             "adaptive_block": 31,    # 自适应阈值窗口（与巡线一致）
             "adaptive_c": -12,       # 阈值偏移
             "stroke_min": 1.0,       # 笔画宽下限px（distanceTransform中位半径×2）
@@ -96,11 +101,18 @@ class ShapeDetector:
     # ═══════════════════════════════════════════════════════════
 
     def update(self, bgr_or_gray):
-        """返回 (action_number, debug_dict) 或 (None, None)。"""
+        """返回 (action_number, debug_dict) 或 (None, None)。
+
+        输入归一化：任意分辨率 → resize到960×540（参数标定基准，
+        YOLO方案A同款）——参数与分辨率解耦；输出quad坐标映射回原图。
+        """
         if len(bgr_or_gray.shape) == 3:
             gray = cv2.cvtColor(bgr_or_gray, cv2.COLOR_BGR2GRAY)
         else:
             gray = bgr_or_gray
+        h0, w0 = gray.shape[:2]
+        self._scale_x = w0 / WORK_W
+        self._scale_y = h0 / WORK_H
 
         if self.roi_ratio < 1.0:
             h = gray.shape[0]
@@ -109,6 +121,10 @@ class ShapeDetector:
             self._roi_y0 = y0
         else:
             self._roi_y0 = 0
+
+        # resize到固定工作分辨率（960×540）
+        if (w0, h0) != (WORK_W, WORK_H):
+            gray = cv2.resize(gray, (WORK_W, WORK_H))
 
         # S1 线宽选择性二值化（线=白255）
         binary = self._binary_selective(gray)
@@ -122,9 +138,16 @@ class ShapeDetector:
         quads += self._cc_quads(binary)
 
         # S3 验证 + 评分
+        # 性能：候选可能数百个（视频帧纹理），先轻量几何预筛（纯数值，
+        # 不采样不warp），通过的才做完整验证（采样+DT+warp200）——
+        # 实测512候选完整验证2.5s → 预筛后剩几十个
         best, best_score, scores = None, 0.0, []
         for q in quads:
+            if not self._geom_ok(q):
+                continue
             q = self._refine_quad(binary, q)
+            if not self._geom_ok(q):
+                continue
             v = self._verify_quad(binary, dt, q)
             if v is not None:
                 score, closure = v
@@ -149,7 +172,10 @@ class ShapeDetector:
             warp = self._warp_card(binary, best)
             shape = self._classify_shape(warp)
             dbg["warp"] = warp
-            dbg["quad"] = best
+            # quad映射回原图分辨率（找框在960×540上做）
+            q_orig = best.astype(np.float32) * np.array(
+                [self._scale_x, self._scale_y], np.float32)
+            dbg["quad"] = q_orig
             dbg["closure"] = best_score
         else:
             shape = self._classify_shape_full(binary)
@@ -169,14 +195,24 @@ class ShapeDetector:
     # ═══════════════════════════════════════════════════════════
 
     def _binary_selective(self, gray):
-        """blackhat(核9) → adaptive(31,-12) → 各向异性闭 → 笔画宽CC过滤。"""
-        k = self.cfg["bh_kernel"]
-        kbh = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+        """复用YOLO预处理方案（shape_preprocess）+ 找框保留环节。
+
+        YOLO方案：blackhat(31) → adaptive(31,-12) → close(3×3)；
+        不反转（YOLO要白底黑线，找框/CNN要黑底白线=线白）。
+        找框保留：各向异性闭（桥接竖边断点）、笔画宽过滤（核31会
+        增强2cm巡线，必须按线宽拒掉）、细长度过滤（拒圆斑污渍）。"""
+        kbh = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                        (self.cfg["bh_kernel"],
+                                         self.cfg["bh_kernel"]))
         gd = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kbh)
 
         binary = cv2.adaptiveThreshold(
             gd, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
             self.cfg["adaptive_block"], self.cfg["adaptive_c"])
+
+        # close(3×3)（YOLO方案形态学）
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k3)
 
         # 各向异性闭：1×5竖桥接远距竖边断点，5×1横补角
         kv = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
@@ -192,35 +228,50 @@ class ShapeDetector:
 
         只过滤小面积：图形环（圆形/方形/三角）bbox长宽比≈1但面积≥80px²
         （最小卡51px的图形环），外框环段面积更大；污渍圆斑直径1-7px
-        面积≤38px²——面积上限+长宽比双闸区分线/斑，不误删图形。"""
+        面积≤38px²——面积上限+长宽比双闸区分线/斑，不误删图形。
+        向量化（stats数组numpy操作，无Python逐CC循环——视频帧CC数百）。"""
         n, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
         if n <= 1:
             return np.zeros_like(binary)
-        out = np.zeros_like(binary)
-        for lid in range(1, n):
-            w = stats[lid, cv2.CC_STAT_WIDTH]
-            h = stats[lid, cv2.CC_STAT_HEIGHT]
-            a = stats[lid, cv2.CC_STAT_AREA]
-            if a < area_max and max(w, h) / max(min(w, h), 1) < 2.0:
-                continue
-            out[labels == lid] = 255
-        return out
+        w = stats[1:, cv2.CC_STAT_WIDTH]
+        h = stats[1:, cv2.CC_STAT_HEIGHT]
+        a = stats[1:, cv2.CC_STAT_AREA]
+        ratio = np.maximum(w, h) / np.maximum(np.minimum(w, h), 1)
+        bad = (a < area_max) & (ratio < 2.0)
+        keep = np.ones(n, bool)
+        keep[0] = False  # 背景
+        keep[1:][bad] = False
+        return (np.isin(labels, np.flatnonzero(keep)).astype(np.uint8) * 255)
 
     def _stroke_width_filter(self, binary):
-        """笔画宽过滤：CC内DT中位半径×2∈[1.5,7]px（拒巡线、留细框线）。"""
+        """笔画宽过滤：CC内DT中位半径×2∈[1.5,7]px（拒巡线、留细框线）。
+
+        向量化：labels排序后reduceat分段取中位，避免Python逐CC循环
+        （视频帧CC数百→千，原循环是预处理耗时大头）。"""
         dt = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
         n, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
         if n <= 1:
             return np.zeros_like(binary)
-        out = np.zeros_like(binary)
         lo, hi = self.cfg["stroke_min"], self.cfg["stroke_max"]
+        lab_v = labels.ravel()
+        dt_v = dt.ravel()
+        valid = lab_v > 0
+        lab_s = lab_v[valid]
+        dt_s = dt_v[valid]
+        order = np.argsort(lab_s, kind="stable")
+        lab_o = lab_s[order]
+        dt_o = dt_s[order]
+        counts = np.bincount(lab_s, minlength=n)
+        starts = np.searchsorted(lab_o, np.arange(n))
+        med = np.zeros(n)
         for lid in range(1, n):
-            mask = labels == lid
-            r = dt[mask]
-            med = float(np.median(r[r > 0])) if np.any(r > 0) else 0.0
-            if lo <= 2.0 * med <= hi:
-                out[mask] = 255
-        return out
+            seg = dt_o[starts[lid]:starts[lid] + counts[lid]]
+            seg = seg[seg > 0]
+            if len(seg):
+                med[lid] = np.median(seg)
+        keep = (med >= lo / 2) & (med <= hi / 2)
+        keep[0] = False
+        return (np.isin(labels, np.flatnonzero(keep)).astype(np.uint8) * 255)
 
     # ═══════════════════════════════════════════════════════════
     # S2 候选生成
@@ -329,16 +380,22 @@ class ShapeDetector:
         if segs is None:
             hs, ls = self._detect_segments(binary)
             segs = hs + ls
-        # 去重 + 长度过滤
+        # 去重（网格量化O(n)）+ 长度过滤 + 数量上限
+        # 上限原因：视频帧纹理线段可达6000+条，O(n²)求交爆炸
+        # （实测f0: Hough 2355+LSD 3677 → 3600万次求交卡死分钟级）；
+        # 图卡框线15-50px比纹理线长，按长度取top200足够。
+        seen_keys = set()
         uniq = []
         for s in segs:
             if np.hypot(s[2]-s[0], s[3]-s[1]) < min_len:
                 continue
-            dup = any(abs(s[0]-u[0])+abs(s[1]-u[1])+abs(s[2]-u[2])+abs(s[3]-u[3]) <= 6
-                      for u in uniq)
-            if not dup:
-                uniq.append(s)
-        segs = uniq
+            key = (s[0] // 8, s[1] // 8, s[2] // 8, s[3] // 8)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            uniq.append(s)
+        uniq.sort(key=lambda s: -(np.hypot(s[2]-s[0], s[3]-s[1])))
+        segs = uniq[:200]
         N = len(segs)
         if N < 4:
             return []
@@ -578,19 +635,19 @@ class ShapeDetector:
             return quad
         return refined
 
-    def _verify_quad(self, binary, dt, quad):
-        """返回 (score, closure) 或 None。闭合度/线宽/环内含量/几何闸门。"""
+    def _geom_ok(self, quad):
+        """轻量几何预筛（纯数值，不采样）：面积/宽高/宽高比/内角。"""
         c = self.cfg
         q = quad.astype(np.float32)
         area = cv2.contourArea(q)
         if not (c["area_min"] <= area <= c["area_max"]):
-            return None
+            return False
         x, y, w, h = cv2.boundingRect(q.astype(np.int32))
         if w < c["min_w"] or h < c["min_h"]:
-            return None
+            return False
         aspect = max(w, h) / max(min(w, h), 1.0)
         if not (c["aspect_min"] <= aspect <= c["aspect_max"]):
-            return None
+            return False
         for i in range(4):
             p1 = q[(i - 1) % 4]
             p2 = q[i]
@@ -600,7 +657,13 @@ class ShapeDetector:
             cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
             ang = np.degrees(np.arccos(np.clip(cos, -1, 1)))
             if not (c["ang_min"] <= ang <= c["ang_max"]):
-                return None
+                return False
+        return True
+
+    def _verify_quad(self, binary, dt, quad):
+        """返回 (score, closure) 或 None。闭合度/线宽/环内含量（几何闸门在_geom_ok）。"""
+        c = self.cfg
+        q = quad.astype(np.float32)
 
         # 闭合度：边采样 ±band 带内命中
         ns = c["n_samples"]
@@ -648,6 +711,8 @@ class ShapeDetector:
         score = closure
         if widths and 1.5 <= 2.0 * np.median(widths) <= 7.0:
             score += 0.2
+        x, y, w, h = cv2.boundingRect(q.astype(np.int32))
+        aspect = max(w, h) / max(min(w, h), 1.0)
         if 1.5 <= aspect <= 4.0:
             score += 0.1
         return score, closure
