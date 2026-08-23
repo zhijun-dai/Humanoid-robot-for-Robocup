@@ -7,33 +7,10 @@
   "camera": {
     "pitch_deg": 45.0,
     "height_cm": 40.0,
-    "vfov_deg": 44.43470249635244,
-    "hfov_deg": 57.52869779855638,
+    "vfov_deg": 56.2,
+    "hfov_deg": 70.9,
     "row_dist_min_cm": 6.0,
-    "row_dist_max_cm": 300.0,
-    "calibration": {
-      "applied_at": "2026-05-08T21:06:32",
-      "source": "generated/camera_calibration_result_calib_photos_manual_now.json",
-      "image_size": {
-        "width": 320,
-        "height": 240
-      },
-      "fx": 291.46836906816463,
-      "fy": 293.7966633381473,
-      "cx": 164.0860376961993,
-      "cy": 125.9393934704418,
-      "dist_coeffs": [
-        -0.42058963203988614,
-        0.064352138140767,
-        0.0003809639915955294,
-        0.0006103333759854944,
-        0.28929041189520976
-      ],
-      "rms_reprojection_error": 0.6653428826791666,
-      "mean_reprojection_error": 0.08283476240500406,
-      "sim_opencv_distort": true,
-      "webots_apply_lens": false
-    }
+    "row_dist_max_cm": 300.0
   },
   "turn": {
     "start_dist_cm": 28.0,

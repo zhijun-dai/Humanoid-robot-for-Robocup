@@ -10,30 +10,7 @@
     "vfov_deg": 56.2,
     "hfov_deg": 70.9,
     "row_dist_min_cm": 6.0,
-    "row_dist_max_cm": 300.0,
-    "calibration": {
-      "applied_at": "2026-05-08T21:06:32",
-      "source": "generated/camera_calibration_result_calib_photos_manual_now.json",
-      "image_size": {
-        "width": 320,
-        "height": 240
-      },
-      "fx": 291.46836906816463,
-      "fy": 293.7966633381473,
-      "cx": 164.0860376961993,
-      "cy": 125.9393934704418,
-      "dist_coeffs": [
-        -0.42058963203988614,
-        0.064352138140767,
-        0.0003809639915955294,
-        0.0006103333759854944,
-        0.28929041189520976
-      ],
-      "rms_reprojection_error": 0.6653428826791666,
-      "mean_reprojection_error": 0.08283476240500406,
-      "sim_opencv_distort": true,
-      "webots_apply_lens": false
-    }
+    "row_dist_max_cm": 300.0
   },
   "turn": {
     "start_dist_cm": 28.0,
@@ -251,29 +228,6 @@
     "kd_shake_scale": 0.37,
     "steer_rate_limit_per_frame": 5.0,
     "decay_frames": 14
-  },
-  "openmv_webots_aligned": {
-    "band_rows_factor": 0.78,
-    "use_histeq": false,
-    "red_detect_on_grayscale": false,
-    "qr_enable": true,
-    "qr_every_n_frames": 3,
-    "qr_lens_corr_strength": 1.35,
-    "qr_stable_frames": 3,
-    "qr_send_cooldown_ms": 3200,
-    "qr_request_ack": true,
-    "qr_only_when_tracking": true,
-    "qr_min_line_conf": 0.22,
-    "qr_patch_scale": 3,
-    "qr_roi_width_frac": 1.0,
-    "qr_roi_height_frac": 0.55,
-    "qr_roi_y_anchor": "bottom",
-    "qr_decode_histeq": true,
-    "qr_retry_without_lens_corr": true,
-    "qr_min_pixels": 12,
-    "qr_max_pixels": 300,
-    "qr_min_area": 60,
-    "qr_debug_log": true
   },
   "webots": {
     "base_speed": 6.28,
