@@ -82,3 +82,16 @@ README.txt
 6_pictures/synthetic_dataset/
 6_pictures/test_synthetic/
 6_pictures/test_synthetic2/
+6_pictures/frontal_dataset/
+6_pictures/scene_valid/
+6_pictures/test_cons/
+6_pictures/test_frontal2/
+6_pictures/test_frontal3/
+6_pictures/test_mp/
+6_pictures/test_negatives_v2/
+6_pictures/test_scene2/
+6_pictures/test_scene3/
+6_pictures/test_scene4/
+
+# 训练/生成日志
+*.log
