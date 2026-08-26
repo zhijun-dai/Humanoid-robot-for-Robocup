@@ -6,7 +6,7 @@ Key differences from V0:
   - Band definitions adapted for 400px birdseye (down 266-398, mid 132-264, up 0-130)
   - No PID/steer/lost controller code — pure vision pipeline
   - No JSON config loading — all params are hardcoded defaults
-  - Constructor: V1(cam_w=320, cam_h=240, cam_height_cm=38, cam_vfov_deg=43.6)
+  - Constructor: V1(cam_w=1280, cam_h=720, cam_height_cm=40, cam_vfov_deg=56.2)
 """
 
 import cv2
@@ -74,7 +74,7 @@ def line_fit(ys, xs):
 # ═══════════════════════════════════════════════════════════════════════
 
 class LineDetector:
-    def __init__(self, cam_w=320, cam_h=240, cam_height_cm=38, cam_pitch_deg=45.0, cam_vfov_deg=43.6):
+    def __init__(self, cam_w=1280, cam_h=720, cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=56.2):
         # ── Camera params ──
         self.cam_w = int(cam_w)
         self.cam_h = int(cam_h)
@@ -92,6 +92,14 @@ class LineDetector:
         self.cm_per_px = self._compute_cm_per_px()
         self.z_per_px = (80.0 - 20.0) / float(self.bird_h - 1)  # vertical cm per px
         self._asp = self.cm_per_px / self.z_per_px  # pixel aspect ratio (~1.84)
+
+        # Pinhole intrinsics (16:9, square pixels) — exact red-bar distance
+        vfov_rad = np.radians(self.cam_vfov_deg)
+        hfov_rad = 2.0 * np.arctan(np.tan(vfov_rad / 2.0) * self.cam_w / self.cam_h)
+        self.fx_px = self.cam_w / (2.0 * np.tan(hfov_rad / 2.0))
+        self.fy_px = self.cam_h / (2.0 * np.tan(vfov_rad / 2.0))
+        self.cx_px = self.cam_w / 2.0
+        self.cy_px = self.cam_h / 2.0
 
         # ── Threshold params ──
         self.th_offset = -2  # stricter: only truly dark pixels
@@ -153,8 +161,6 @@ class LineDetector:
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_y0_ratio = 0.0    # y=0, birdseye top (~80cm)
-        self.red_bar_y1_ratio = 1.0    # y=399, birdseye bottom (~10cm)
         self.red_bar_confirm_frames = 3
 
         # ── Bottom lock ──
@@ -443,14 +449,16 @@ class LineDetector:
         return best_y
 
     def _detect_red_bar(self, bgr):
-        """Find red bar in birdseye ROI, return bottom-edge (cx, cy) or None."""
-        y0 = int(self.red_bar_y0_ratio * self.bird_h)
-        y1 = int(self.red_bar_y1_ratio * self.bird_h)
-        roi = bgr[y0:y1 + 1, :, :]
+        """Find red bar in the ORIGINAL image.
 
-        rb = roi[:, :, 0].astype(np.int32)
-        rg = roi[:, :, 1].astype(np.int32)
-        rr = roi[:, :, 2].astype(np.int32)
+        Returns (cx, v_foot, z_cm) or None:
+          cx     - horizontal centroid (px, original image)
+          v_foot - lowest red row (bar near edge)
+          z_cm   - exact ground distance of v_foot via pinhole back-projection
+        """
+        rb = bgr[:, :, 0].astype(np.int32)
+        rg = bgr[:, :, 1].astype(np.int32)
+        rr = bgr[:, :, 2].astype(np.int32)
         is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
 
         if np.count_nonzero(is_red) < 50:
@@ -458,8 +466,11 @@ class LineDetector:
 
         ys, xs = np.where(is_red)
         cx = float(np.mean(xs))
-        cy = float(np.mean(ys)) + y0  # centroid
-        return cx, cy
+        v_foot = float(np.max(ys))  # lowest row = bar near edge
+        a = (v_foot - self.cy_px) / self.fy_px
+        z_cm = self.cam_height * (np.cos(self.cam_pitch) - a * np.sin(self.cam_pitch)) \
+            / (a * np.cos(self.cam_pitch) + np.sin(self.cam_pitch))
+        return cx, v_foot, z_cm
 
     # ═══════════════════════════════════════════════════════════
     # Run collection
@@ -1067,10 +1078,10 @@ class LineDetector:
         red_bar_cx, red_bar_cy = 0.0, 0.0
         red_bar_x_cm, red_bar_z_cm = 0.0, 0.0
         if self.red_detect_enable:
-            centroid = self._detect_red_bar(bgr_bird)
-            if centroid is not None:
-                red_bar_cx, red_bar_cy = centroid
-                red_bar_x_cm, red_bar_z_cm = self._px_to_ground_cm(red_bar_cx, red_bar_cy)
+            res = self._detect_red_bar(bgr)
+            if res is not None:
+                red_bar_cx, red_bar_cy, red_bar_z_cm = res
+                red_bar_x_cm = (red_bar_cx - self.cx_px) / self.fx_px * red_bar_z_cm
                 state["red_bar_count"] = min(state["red_bar_count"] + 1, self.red_bar_confirm_frames + 1)
             else:
                 state["red_bar_count"] = max(state["red_bar_count"] - 1, 0)
@@ -1387,7 +1398,6 @@ class LineDetector:
         vis = self._build_visualization(
             gray, bgr_bird, roi_results, black_th, track_is_dark,
             dev_px, heading_deg, conf, base_err_px, band_mask,
-            red_bar_cx, red_bar_cy,
         )
 
         # ── Debug info ──
@@ -1409,6 +1419,8 @@ class LineDetector:
             "red_bar_detected": red_bar_detected,
             "red_bar_z_cm": red_bar_z_cm,
             "red_bar_x_cm": red_bar_x_cm,
+            "red_bar_cx": red_bar_cx,
+            "red_bar_cy": red_bar_cy,
             "bottom_pair_ratio": bottom_pair_ratio,
             "bottom_sym_err_px": bottom_sym_err_px,
             "bottom_lock_valid": bottom_lock_valid,
@@ -1474,7 +1486,7 @@ class LineDetector:
     def _build_visualization(self, gray_bird, bgr_bird,
                              roi_results, black_th, track_is_dark,
                              dev_px, heading_deg, conf, base_err_px,
-                             band_mask, red_bar_cx=None, red_bar_cy=None):
+                             band_mask):
         """Overlay detection results on the birdseye image."""
         vis = cv2.cvtColor(gray_bird, cv2.COLOR_GRAY2BGR)
 
@@ -1538,13 +1550,6 @@ class LineDetector:
         arrow_end = (self.center_x + dx, self.bird_h - 40 + dy)
         cv2.arrowedLine(vis, arrow_start, arrow_end, (0, 255, 255), 2, tipLength=0.4)
 
-        # Red bar detection marker
-        if red_bar_cx is not None and red_bar_cy is not None and red_bar_cx > 0:
-            cx_i, cy_i = int(red_bar_cx), int(red_bar_cy)
-            cv2.circle(vis, (cx_i, cy_i), 8, (0, 0, 255), -1)
-            cv2.line(vis, (0, cy_i), (self.bird_w - 1, cy_i), (0, 0, 255), 2)
-            cv2.putText(vis, "RED", (cx_i + 12, cy_i - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
         # Text info
         font = cv2.FONT_HERSHEY_SIMPLEX
         lines = [
@@ -1571,8 +1576,8 @@ if __name__ == "__main__":
     import numpy as np
 
     print("LineDetector V1 (Warp) — self-test")
-    ld = LineDetector(cam_w=320, cam_h=240, cam_height_cm=38, cam_vfov_deg=43.6)
-    bgr = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
+    ld = LineDetector()
+    bgr = np.random.randint(0, 255, (720, 1280, 3), dtype=np.uint8)
     dev, hdg, conf, vis, dbg = ld.process(bgr)
     print(f"OK: dev={dev:.2f}px  hdg={hdg:.2f}deg  conf={conf:.3f}")
     print(f"  lost={dbg['lost_frames']}  n_roi={dbg['n_roi_results']}  black_th={dbg['black_th']}")

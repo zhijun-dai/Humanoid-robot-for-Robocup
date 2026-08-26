@@ -116,11 +116,18 @@ def main():
             cv2.putText(frame, f"QR={last_qr_action}", (actual_w - 150, 70),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 180, 180), 2)
 
-        # ── 红条 (from V1 detector, viz on window 4) ──
+        # ── 红条 (from V1 detector, overlay on original) ──
         if dbg.get("red_bar_detected"):
             rz = dbg.get("red_bar_z_cm", 0.0)
             rx = dbg.get("red_bar_x_cm", 0.0)
             status_line += f" | RED z={rz:.0f}cm x={rx:.0f}cm"
+            rcx = dbg.get("red_bar_cx", 0.0)
+            rcy = dbg.get("red_bar_cy", 0.0)
+            if rcy > 0:
+                cv2.line(frame, (0, int(rcy)), (actual_w - 1, int(rcy)), (0, 0, 255), 2)
+                cv2.circle(frame, (int(rcx), int(rcy)), 10, (0, 0, 255), -1)
+                cv2.putText(frame, f"z={rz:.0f}cm", (int(rcx) + 16, int(rcy) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         # ── 状态栏 ──
         cv2.rectangle(frame, (0, 0), (actual_w, 28), (30, 30, 30), -1)
