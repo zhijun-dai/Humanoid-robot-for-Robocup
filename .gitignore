@@ -95,3 +95,11 @@ README.txt
 
 # 训练/生成日志
 *.log
+
+# SolidWorks / 机械建模源文件（大二进制不入库，由机械组本地保管）
+*.SLDPRT
+*.SLDASM
+*.STP
+*.STEP
+人形第一版建模/
+人形第一版.SLDASM/
