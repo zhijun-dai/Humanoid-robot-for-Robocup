@@ -24,13 +24,18 @@
 
 ## Jetson 安装
 
+**JetPack 7.2**（Ubuntu 24.04 + Python 3.12 + CUDA 13.2；NVIDIA jp wheelhouse
+是 py3.10 的用不了，走上游 cu132 wheel）：
 ```bash
-# torch（按 JetPack 版本改 v61/v612…，见 requirements-gpu.txt）
-pip install torch --index-url https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch
-# OpenCV：探测系统自带是否带 CUDA
-python probe.py
-#   不带 → sudo apt install python3-opencv  或 自编译（CUDA_ARCH_BIN=8.7）
+python3 -m venv ~/robocup-venv && source ~/robocup-venv/bin/activate
+pip install "numpy<=1.26.4"   # torch cu132 与 numpy 2.x 冲突
+pip install torch==2.12.0+cu132 --index-url https://download.pytorch.org/whl/cu132
+pip install pyserial
+python probe.py               # OpenCV 探测（预装版是否带 CUDA）
+# 不带 → 用 JetPack 预装 opencv 或 4.8.x 带 CUDA wheel（pip opencv-python 5.0 有坑）
 ```
+
+JetPack 6.x 旧路线见 requirements-gpu.txt 注释。
 
 ## 运行
 

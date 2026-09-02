@@ -1,24 +1,30 @@
 # GPU 版运行依赖（Jetson Orin / 桌面通用）
 #
 # ⚠ 不要用普通 pip 源装 torch（aarch64 无 CUDA wheel）。
-# Jetson 安装：
-#   1) torch: NVIDIA JetPack wheelhouse，按板子 JetPack 小版本选目录
-#      例 JetPack 6.1: pip install torch --index-url \
-#          https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch
-#      （6.0→v60、6.2→v612 等，见
-#       https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/）
-#   2) torchvision 同源 wheelhouse
-#   3) OpenCV: 先跑 probe.py 检查系统自带是否带 CUDA
-#      （python3 -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())"）
-#      不带则 sudo apt install python3-opencv（JetPack 源通常为 CUDA 编译）
-#      或源码自编译（-DWITH_CUDA=ON, CUDA_ARCH_BIN=8.7）
+#
+# ── Jetson JetPack 7.2（实测路线，2026-06 NVIDIA 论坛验证）──
+# 系统: Ubuntu 24.04 + Python 3.12 + CUDA 13.2。
+# 注意: NVIDIA 官方 jp/v6x wheelhouse 是 Python 3.10 编译，JP7.2 用不了；
+#       改用上游 PyTorch 官方 cu132 aarch64 wheel。
+#
+#   python3 -m venv ~/robocup-venv && source ~/robocup-venv/bin/activate
+#   pip install "numpy<=1.26.4"          # torch cu132 wheel 与 numpy 2.x 冲突
+#   pip install torch==2.12.0+cu132 --index-url https://download.pytorch.org/whl/cu132
+#   pip install pyserial
+#   # OpenCV: 先探测预装版是否带 CUDA
+#   #   python3 -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())"
+#   # 不带 → 用 JetPack 预装或 4.8.x 带 CUDA wheel（pip 的 opencv-python 5.0 有坑）
+#
+# ── Jetson JetPack 6.x（旧）──
+#   pip install torch --index-url \
+#     https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch   # 按小版本
 #
 # 桌面 CPU 验证环境：照用仓库根 requirements.txt（opencv-python + CPU torch），
 # gpu_vision 自动走 CPU 回退，输出与 CPU 版一致。
 
-opencv-python>=4.8
+opencv-python>=4.8,<5
 numpy>=1.24
 pyserial>=3.5
-# Jetson 上由 NVIDIA wheelhouse 提供（见上），桌面 CPU 验证从 pytorch.org/cpu 装：
+# Jetson 装法见上（JP7.2: cu132 wheel），桌面 CPU 验证：
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 torch>=2.0
