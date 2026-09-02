@@ -6,6 +6,9 @@ kiwisolver==1.5.0
 matplotlib==3.10.8
 numpy==2.4.3
 opencv-python==4.13.0.92
+# CPU 推理: pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Jetson(Orin): 用 NVIDIA JetPack wheelhouse 装 aarch64 CUDA 版
+torch>=2.0
 packaging==26.0
 pillow==12.1.1
 pyparsing==3.3.2

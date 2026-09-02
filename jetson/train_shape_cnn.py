@@ -1,7 +1,7 @@
 """微型CNN训练 — 图卡矫正正视图分类（6类图形+背景）。
 
 路线B分类器：找框→矫正96×96→本CNN。0.4M参数，MNIST级任务。
-输入：96×96单通道二值图（白底黑线，来自闭环管线矫正输出）。
+输入：96×96单通道二值图（黑底白线，来自闭环管线矫正输出）。
 
 用法:
     python jetson/train_shape_cnn.py --data 6_pictures/frontal_dataset/batch_xxx
@@ -16,31 +16,9 @@ import random
 import numpy as np
 import cv2
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-N_CLASSES = 7  # 6图形 + 背景
-
-
-class ShapeCNN(nn.Module):
-    """96×96×1 → Conv32→64→128(stride2)+BN+ReLU → GAP → FC(7)，≈0.4M。"""
-
-    def __init__(self, n_classes=N_CLASSES):
-        super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 32, 3, stride=2, padding=1), nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-        )
-        self.head = nn.Linear(128, n_classes)
-
-    def forward(self, x):
-        x = self.features(x)
-        x = x.mean(dim=(2, 3))  # GAP
-        return self.head(x)
+from shape_cnn import N_CLASSES, ShapeCNN
 
 
 def imread_p(path):

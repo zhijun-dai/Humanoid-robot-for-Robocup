@@ -15,9 +15,18 @@ v2 找框重构：线宽选择性预处理（blackhat核9 + 各向异性闭 + �
 动作映射（与2025二维码1-6对应）：
   圆形=1举左手 五角星=2举右手 正方形=3抬左腿 菱形=4抬右腿 十字形=5举双手 三角形=6摇头
 """
+import os
 import cv2
 import time
 import numpy as np
+
+try:
+    import torch
+    from shape_cnn import ShapeCNN, CLASS_NAMES
+except Exception:
+    torch = None
+    ShapeCNN = None
+    CLASS_NAMES = None
 
 
 def clamp(v, lo, hi):
@@ -77,6 +86,9 @@ class ShapeDetector:
             "warp_inset": 0.14,      # warp向内收缩比例（外框环不进warp）
             "refine_band": 8,        # quad逐边精调搜索带宽px
             "track_iou": 0.5,        # 帧间续锁IoU
+            # CNN 分类（路线B分类器）
+            "cnn_enable": os.environ.get("SHAPE_CNN_ENABLE", "1") != "0",
+            "cnn_conf_min": 0.85,    # 低于此置信不输出（回退规则法）
         }
 
         # 动作映射: shape_name -> action_number (1-6)
@@ -95,6 +107,25 @@ class ShapeDetector:
         self.last_send_ms = None
         self.first_candidate_ms = None
         self.last_quad = None       # 帧间跟踪锁
+
+        # ── CNN 分类器（权重缺失/torch缺失 → 规则法兜底）──
+        self.cnn = None
+        self.last_cnn_prob = None
+        if self.cfg["cnn_enable"] and torch is not None:
+            try:
+                w_path = os.environ.get(
+                    "SHAPE_CNN_WEIGHT",
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "shape_cnn_best_v2.pt"))
+                model = ShapeCNN()
+                model.load_state_dict(
+                    torch.load(w_path, map_location="cpu"))
+                model.eval()
+                self.cnn = model
+                print(f"[shape] CNN 已加载: {w_path}")
+            except Exception as e:
+                print(f"[shape] WARNING: CNN 加载失败({e})，回退规则分类")
+                self.cnn = None
 
     # ═══════════════════════════════════════════════════════════
     # 主入口
@@ -170,17 +201,22 @@ class ShapeDetector:
 
         if best is not None:
             warp = self._warp_card(binary, best)
-            shape = self._classify_shape(warp)
             dbg["warp"] = warp
+            # CNN 主判，规则法兜底（CNN判背景/低置信/不可用 → 规则再判）
+            shape = self._classify_cnn(warp) if self.cnn is not None else None
+            if shape is None:
+                shape = self._classify_shape(warp)
             # quad映射回原图分辨率（找框在960×540上做）
             q_orig = best.astype(np.float32) * np.array(
                 [self._scale_x, self._scale_y], np.float32)
             dbg["quad"] = q_orig
             dbg["closure"] = best_score
         else:
+            self.last_cnn_prob = None  # 无框路径未跑 CNN
             shape = self._classify_shape_full(binary)
             dbg["fallback"] = True
 
+        dbg["cnn_prob"] = self.last_cnn_prob if self.cnn is not None else None
         if shape is None:
             self.candidate = None
             self.candidate_count = 0
@@ -771,8 +807,29 @@ class ShapeDetector:
         return inter / max(a1 + a2 - inter, 1e-6)
 
     # ═══════════════════════════════════════════════════════════
-    # 形状分类（沿用v1规则，后续可被CNN替换）
+    # 形状分类：CNN 主判（_classify_cnn），规则法（_classify_shape）兜底
     # ═══════════════════════════════════════════════════════════
+
+    def _classify_cnn(self, warp):
+        """ShapeCNN 分类 warp200（黑底白线）→ shape name 或 None。
+
+        输入与训练一致：_warp_card 输出（黑底白线 255）→ resize 96
+        INTER_LINEAR → /255 → (1,1,96,96)。label 6=背景 或
+        置信 < cnn_conf_min → None（调用方回退规则法）。
+        """
+        try:
+            x = cv2.resize(warp, (96, 96), interpolation=cv2.INTER_LINEAR)
+            x = torch.from_numpy(x).float().unsqueeze(0).unsqueeze(0) / 255.0
+            with torch.no_grad():
+                prob = torch.softmax(self.cnn(x), dim=1)[0]
+            p_max, idx = float(prob.max()), int(prob.argmax())
+            self.last_cnn_prob = p_max
+            if idx >= len(CLASS_NAMES) or p_max < self.cfg["cnn_conf_min"]:
+                return None
+            return CLASS_NAMES[idx]
+        except Exception:
+            self.last_cnn_prob = None
+            return None
 
     def _classify_shape(self, warp):
         # 远距卡warp后笔画1-2px且有2-10px断口：close(5,5)+dilate(1px)桥接
