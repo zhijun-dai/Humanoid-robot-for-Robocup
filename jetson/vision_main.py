@@ -1,4 +1,4 @@
-"""Jetson Nano 视觉 Demo — 巡线 + QR + 红条 实时可视化
+"""Jetson Nano 视觉 Demo — 巡线 + 红条 + 图卡 实时可视化
 双击 run_vision_demo.bat 运行。ESC 退出。
 """
 import cv2
@@ -8,8 +8,6 @@ import os
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "v1_production"))
-from qr_detector import QRDetector
 from line_detector_v1_warp import LineDetector
 
 
@@ -17,7 +15,6 @@ from line_detector_v1_warp import LineDetector
 CAM_IDX = 0          # 0=内置 1=USB（不确定就试）
 CAM_W = 1280
 CAM_H = 720
-COOLDOWN_MS = 2000
 
 
 def main():
@@ -33,21 +30,16 @@ def main():
         return
 
     # 检测器
-    qr = QRDetector(stable_frames=1, cooldown_ms=COOLDOWN_MS,
-                    min_edge_px=20, max_edge_px=400, debug=False)
     ld = LineDetector(cam_w=actual_w, cam_h=actual_h,
                       cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=56.2)
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
-    print("  巡线: 几何原语拟合 (平行线 / 同心圆)")
-    print("  QR:   raw + 2x upscale  红条: HSV mask")
+    print("  巡线 + 红条 + 图卡 (几何形状)")
     print("  Press ESC to quit\n")
 
     fps_t0 = time.time()
     fps_n = 0
     fps_val = 0.0
-    last_qr_action = None
-    last_qr_t = 0
 
     while True:
         ret, frame = cap.read()
@@ -104,17 +96,6 @@ def main():
             cv2.circle(frame, (dev_indicator, bar_y), 7, turn_color, -1)
         else:
             status_line += " | NO LINE"
-
-        # ── QR ──
-        action, qr_dbg = qr.update(frame)
-        if action is not None:
-            last_qr_action = action
-            last_qr_t = t_now
-            cv2.putText(frame, f"QR={action}!", (actual_w - 150, 70),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 3)
-        elif last_qr_action is not None and t_now - last_qr_t < 2.0:
-            cv2.putText(frame, f"QR={last_qr_action}", (actual_w - 150, 70),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 180, 180), 2)
 
         # ── 红条 (from V1 detector, overlay on original) ──
         if dbg.get("red_bar_detected"):

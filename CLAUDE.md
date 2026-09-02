@@ -21,25 +21,25 @@ RoboCup Humanoid competition (2026规则) — a biped robot follows a black line
 
 | # | 输出 | 实现位置 | 说明 |
 |---|------|---------|------|
-| 1 | **红条检测** | `jetson/line_detector_v1_warp.py::_detect_red_bar()` | birdseye全图判红→质心→距离 |
-| 2 | **几何图卡识别** | `jetson/shape_detector.py`（待开发） | 6种几何图形，替代原QR |
+| 1 | **红条检测** | `jetson/line_detector_v1_warp.py::_detect_red_bar()` | 原图判红→最低行→精确反投影距离 |
+| 2 | **几何图卡识别** | `jetson/shape_detector.py` | 找框+ShapeCNN(96.5%)分类，替代原QR |
 | 3 | **窄门信号** | `jetson/line_detector_v1_warp.py` | mid/low band宽度空间差分 + 起跑线/红条双验证 |
 | 4 | **转向+偏角** | `jetson/line_detector_v1_warp.py` | two-band扫描 + bottom lock + 统一heading fit → fused_err |
 
 ## Key Architecture
 
 ### Jetson Vision (主力实车方案, CPython)
-- `jetson/line_detector_v1_warp.py` — **核心**: IPM鸟瞰变换 + 巡线 + 红条 + 窄门 + 光流(默认关)
-- `jetson/run_real_car.py` — 实车控制器: PID + 差速 + 串口(7字节帧带XOR校验)
+- `jetson/line_detector_v1_warp.py` — **核心**: IPM鸟瞰变换 + 巡线 + 红条(原图判红+精确反投影) + 窄门
+- `jetson/shape_detector.py` — 图卡找框 + 分类（ShapeCNN 主判 96.5%, 规则法兜底）
+- `jetson/shape_cnn.py` + `shape_cnn_best_v2.pt` — CNN 模型共享定义与运行时权重
+- `jetson/run_robot.py` — 机器人控制器: 协议V2 LINE_CTRL + 一步前瞻（弯道切线补偿）
+- `jetson/run_real_car.py` — 测试车控制器: PID + 差速 + 串口(7字节帧带XOR校验)
 - `jetson/vision_main.py` — 调试Demo: 四窗口可视化 + 图卡 + 红条 + 窄门
-- `jetson/qr_detector.py` — QR检测器（2026规则废弃，待替换为形状识别）
-- `jetson/digit_reader.py` — 向下摄像头数字/虚线识别（独立功能）
+- `jetson/gpu_vision/` — Jetson GPU 加速版（cv2.cuda 预处理 + CUDA 推理，CPU 自动回退）
 
-### OpenMV Camera (vision processing, MicroPython)
-- `openmv/main_webots_aligned.py` — source "master" copy aligned with Webots controller
-- `openmv/main1.py` — lighter 3-ROI reference implementation
-- `openmv/protocol_v2.py` — protocol V2 master source
-- `openmv/QRcode/` — 二维码图片素材（2026废弃，保留作参考）
+### OpenMV Camera (retired platform — 仅协议源保留)
+- `openmv/main_webots_aligned.py` / `main1.py` — MicroPython 参考（已退役）
+- `openmv/protocol_v2.py` — protocol V2 source（与 jetson/ Webots 三端同步）
 
 ### Webots Simulation (CPython)
 - `Webots/worlds/Robocup.wbt` — simulation world (相机高0.40m, FOV 0.855rad)
@@ -73,10 +73,12 @@ RoboCup Humanoid competition (2026规则) — a biped robot follows a black line
 - 窄门: 进入=宽度比例out模式+红条可见+起跑线可见(三重确认); 离开=红条/起跑线靠近阈值
 - 几何布局: 窄门出口 --24cm--> 红条 --36cm--> 起跑线(60cm)
 
-### 图卡识别 (2026新任务, 待开发)
+### 图卡识别 (路线B: CV找框 + ShapeCNN, 已部署)
 - 6种几何图形: 圆形/五角星/正方形/菱形/十字形/三角形
-- 技术路线: 见 `docs/新规则技术路线.md`
+- 管线: 找框(960×540 二值化四通道候选→几何验证) → 单应矫正200×200 → CNN 96×96
+- 数据: `6_pictures/generate_synthetic_cards.py` 闭环合成（场景→找框→矫正）
 - 动作映射: 圆形=举左手, 五角星=举右手, 正方形=抬左腿, 菱形=抬右腿, 十字形=举双手, 三角形=左右摇头
+- 识别后需完全停止步行3秒（run_robot.py 图卡状态机）
 - 识别后需完全停止步行3秒
 
 ## Key Scripts
@@ -117,11 +119,11 @@ python jetson/run_real_car.py
 ```
 PID + 4-wheel differential drive + serial output. Keys: Q=quit, S=toggle serial.
 
-### Run downward digit reader
+### Run robot controller (Jetson GPU 版)
 ```
-python jetson/digit_reader.py --cam 1
+python jetson/gpu_vision/run_robot.py --headless
 ```
-Template-matching digit recognition (0-60) + dash counting for track positioning.
+详见 `jetson/gpu_vision/README.md`（probe/compare_cpu_gpu 验收）。
 
 ## Running Tests
 ```
