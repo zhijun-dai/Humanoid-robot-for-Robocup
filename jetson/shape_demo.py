@@ -158,11 +158,14 @@ def main():
         def _n(s):
             return SHAPE_NAMES.get(s, s) if s else "-"
         info = f"CNN: {_n(cnn_s)} | 规则: {_n(rules_s)}"
+        hu_b, hu_d = cv_dbg.get("hu_best"), cv_dbg.get("hu_dist")
+        if hu_b:
+            info += f" | Hu: {_n(hu_b)}({hu_d:.3f})"
         if model is not None:
             info += f" | YOLO: {_n(yo_shape)}"
         cv2.putText(disp, info, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
                     0.6, (200, 200, 0), 2)
-        return disp, final, (cnn_s, rules_s)
+        return disp, final, (cnn_s, rules_s, hu_b, hu_d)
 
     # ── 照片模式 ──
     if args.image:
@@ -171,9 +174,12 @@ def main():
             print(f"无法读取 {args.image}")
             return
         disp, final, paths = process_frame(img)
+        cnn_s, rules_s, hu_b, hu_d = paths
         print(f"\n=== {os.path.basename(args.image)} ===")
-        print(f"  CNN: {SHAPE_NAMES.get(paths[0], '-') if paths[0] else '-'}"
-              f" | 规则(纯CV): {SHAPE_NAMES.get(paths[1], '-') if paths[1] else '-'}")
+        print(f"  CNN: {SHAPE_NAMES.get(cnn_s, '-') if cnn_s else '-'}"
+              f" | 规则(纯CV): {SHAPE_NAMES.get(rules_s, '-') if rules_s else '-'}")
+        if hu_b:
+            print(f"  Hu矩: {SHAPE_NAMES.get(hu_b, hu_b)} (距离 {hu_d:.4f}，辅助参考)")
         if final:
             src, shape, action, conf = final
             print(f"  识别: {SHAPE_NAMES.get(shape, shape)} (动作{action} {ACTION_NAMES[action]})")
@@ -203,9 +209,11 @@ def main():
             if final:
                 src, shape, action, conf = final
                 print(f"  帧{frame_idx:>4}: {SHAPE_NAMES.get(shape, shape)} 动作{action} "
-                      f"({src} conf={conf:.2f})  [CNN:{paths[0] or '-'} 规则:{paths[1] or '-'}]")
+                      f"({src} conf={conf:.2f})  [CNN:{paths[0] or '-'} "
+                      f"规则:{paths[1] or '-'} Hu:{paths[2] or '-'}]")
             else:
-                print(f"  帧{frame_idx:>4}: 未识别  [CNN:{paths[0] or '-'} 规则:{paths[1] or '-'}]")
+                print(f"  帧{frame_idx:>4}: 未识别  [CNN:{paths[0] or '-'} "
+                      f"规则:{paths[1] or '-'} Hu:{paths[2] or '-'}]")
             cv2.imshow("Video", disp)
             frame_idx += 1
             if cv2.waitKey(1) & 0xFF == 27:

@@ -113,6 +113,17 @@ class ShapeDetector:
         self.first_candidate_ms = None
         self.last_quad = None       # 帧间跟踪锁
 
+        # ── Hu 矩模板（辅助判据，不改判定树；缺失则跳过）──
+        self.hu_templates = {}
+        self.last_hu = None
+        try:
+            hu_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "shape_hu_templates.npz")
+            with np.load(hu_path) as f:
+                self.hu_templates = {k: f[k] for k in f.files}
+        except Exception:
+            self.hu_templates = {}
+
         # ── CNN 分类器（权重缺失/torch缺失 → 规则法兜底）──
         self.cnn = None
         self.last_cnn_prob = None
@@ -822,6 +833,7 @@ class ShapeDetector:
         mode = self.classify_mode
         shape_cnn = shape_rules = None
         self.last_cnn_prob = None
+        self.last_hu = None
         if mode in ("auto", "cnn") and self.cnn is not None:
             shape_cnn = self._classify_cnn(warp)
         if (mode == "rules" or self.compare_both
@@ -835,6 +847,8 @@ class ShapeDetector:
             shape = shape_cnn if shape_cnn is not None else shape_rules
         dbg["shape_cnn"] = shape_cnn
         dbg["shape_rules"] = shape_rules
+        dbg["hu_best"] = self.last_hu[0] if self.last_hu else None
+        dbg["hu_dist"] = self.last_hu[1] if self.last_hu else None
         return shape
 
     def _classify_cnn(self, warp):
@@ -930,7 +944,22 @@ class ShapeDetector:
             return None
         return self._classify_contour(best)
 
+    def _hu_match(self, contour):
+        """Hu 矩模板匹配（辅助信息）：返回 (最接近类名, 距离) 或 None。
+
+        注意：Hu 矩旋转不变 → 方形/菱形理论同距，仅作参考，不参与判定。
+        """
+        if not self.hu_templates:
+            return None
+        best = None
+        for name, tpl in self.hu_templates.items():
+            d = cv2.matchShapes(contour, tpl, cv2.CONTOURS_MATCH_I1, 0.0)
+            if best is None or d < best[1]:
+                best = (name, float(d))
+        return best
+
     def _classify_contour(self, contour):
+        self.last_hu = self._hu_match(contour)
         peri = cv2.arcLength(contour, True)
         if peri <= 0:
             return None
