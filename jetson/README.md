@@ -40,4 +40,6 @@ python jetson/gpu_vision/probe.py            # 板子环境探测
 
 ## 归档
 
-2025 规则（QR）/ YOLO 方案 / 旧工具代码归档在 `archive/legacy_2026/`。
+2025 规则（QR）代码、YOLO 训练产物（权重/曲线/训练脚本）归档在
+`archive/legacy_2026/`。图形识别 demo（`shape_demo.py`，含纯 CV 方案）
+在 jetson/ 下。
