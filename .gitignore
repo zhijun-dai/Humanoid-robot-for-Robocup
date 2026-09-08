@@ -103,3 +103,6 @@ README.txt
 *.STEP
 人形第一版建模/
 人形第一版.SLDASM/
+
+# demo 输出
+6_pictures/demo_result.jpg
