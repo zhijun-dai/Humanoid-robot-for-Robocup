@@ -1,18 +1,16 @@
 """几何图卡识别 Demo — 支持照片和视频。
 
 用法:
-    python jetson/shape_demo.py --image path/to/photo.jpg
-    python jetson/shape_demo.py --video path/to/video.mp4
-    python jetson/shape_demo.py --image 6_pictures/圆形.png   # 默认测试图
+    python jetson/shape_demo.py --image path/to/photo.jpg --method both
+    python jetson/shape_demo.py --video path/to/video.mp4 --method cv
+    python jetson/shape_demo.py --image 6_pictures/圆形.png
 
-输出:
-    - 识别结果: 图形名称 + 动作号 + 置信度
-    - 可视化: 检测框画在图上（CV方案画外框，YOLO方案画bbox）
+分类路径（--method）:
+    cv   纯 CV 规则法（多边形拟合+几何特征判定，资格审核用）
+    cnn  ShapeCNN 神经网络分类
+    both 两条路径都算，输出对比（默认）
 
-双方案:
-    A. 传统CV (shape_detector.py) — 外框检测+单应性矫正+形状分类
-    B. YOLO (shape_yolo_best.pt) — 直接检测
-    C. 混合: 两者结果取高置信度
+找框 + 单应矫正对所有路径相同；YOLO 方案用 --yolo 单独启用。
 """
 import argparse
 import os
@@ -48,12 +46,16 @@ def load_image(path):
 
 
 def run_cv(img, detector):
-    """传统CV方案。返回 (shape_name, action, conf, quad)"""
+    """找框+分类（路径由 detector.classify_mode 决定）。
+
+    返回 (shape, action, conf, quad, dbg)；dbg 含 shape_cnn/shape_rules 两路结果。
+    """
     action, dbg = detector.update(img)
     shape = dbg.get("shape")
-    if shape is None:
-        return None, None, 0.0, None
-    return shape, action, 1.0, dbg.get("quad")
+    conf = dbg.get("cnn_prob")
+    if conf is None:
+        conf = 1.0 if shape is not None else 0.0
+    return shape, action, conf, dbg.get("quad"), dbg
 
 
 def run_yolo(img, model):
@@ -80,15 +82,20 @@ def main():
     parser.add_argument("--video", type=str, default=None, help="视频路径")
     parser.add_argument("--yolo", action="store_true",
                         help="启用YOLO方案（需ultralytics+权重）")
+    parser.add_argument("--method", choices=("cv", "cnn", "both"), default="both",
+                        help="分类路径: cv=纯CV规则 / cnn=神经网络 / both=两路都算(默认)")
     parser.add_argument("--preprocess", action="store_true",
                         help="YOLO前先做传统CV预处理（灰度/CLAHE/Otsu/形态学）")
     parser.add_argument("--save-pre", type=str, default=None,
                         help="保存预处理中间图到指定路径（调试用）")
     args = parser.parse_args()
 
-    # CV检测器
+    # 分类路径: cv→rules, cnn→cnn, both→auto+两路都算
+    mode_map = {"cv": ("rules", False), "cnn": ("cnn", False),
+                "both": ("auto", True)}
+    cm, cb = mode_map[args.method]
     detector = ShapeDetector(stable_frames=1, cooldown_ms=0, debug=False,
-                             roi_ratio=1.0)
+                             roi_ratio=1.0, classify_mode=cm, compare_both=cb)
 
     # YOLO模型（可选）
     model = None
@@ -103,8 +110,10 @@ def main():
             print(f"[yolo] 加载失败（跳过YOLO）: {e}")
 
     def process_frame(frame, frame_idx=0):
-        # 方案A: CV（在原图上，不做预处理——CV有自己的二值化）
-        cv_shape, cv_action, cv_conf, cv_quad = run_cv(frame, detector)
+        # 找框 + 分类（cv/cnn/both 由 detector 配置决定）
+        cv_shape, cv_action, cv_conf, cv_quad, cv_dbg = run_cv(frame, detector)
+        cnn_s = cv_dbg.get("shape_cnn")
+        rules_s = cv_dbg.get("shape_rules")
         # 方案B: YOLO（可选预处理：真实帧→白底黑线→喂模型）
         yo_shape, yo_action, yo_conf, yo_box = (None, None, 0.0, None)
         if model is not None:
@@ -146,10 +155,14 @@ def main():
         cv2.putText(disp, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 0, 255), 2)
 
-        cv_info = f"CV: {SHAPE_NAMES.get(cv_shape, '-') if cv_shape else '-'} | YOLO: {SHAPE_NAMES.get(yo_shape, '-') if yo_shape else '-'}"
-        cv2.putText(disp, cv_info, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
+        def _n(s):
+            return SHAPE_NAMES.get(s, s) if s else "-"
+        info = f"CNN: {_n(cnn_s)} | 规则: {_n(rules_s)}"
+        if model is not None:
+            info += f" | YOLO: {_n(yo_shape)}"
+        cv2.putText(disp, info, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
                     0.6, (200, 200, 0), 2)
-        return disp, final
+        return disp, final, (cnn_s, rules_s)
 
     # ── 照片模式 ──
     if args.image:
@@ -157,8 +170,10 @@ def main():
         if img is None:
             print(f"无法读取 {args.image}")
             return
-        disp, final = process_frame(img)
+        disp, final, paths = process_frame(img)
         print(f"\n=== {os.path.basename(args.image)} ===")
+        print(f"  CNN: {SHAPE_NAMES.get(paths[0], '-') if paths[0] else '-'}"
+              f" | 规则(纯CV): {SHAPE_NAMES.get(paths[1], '-') if paths[1] else '-'}")
         if final:
             src, shape, action, conf = final
             print(f"  识别: {SHAPE_NAMES.get(shape, shape)} (动作{action} {ACTION_NAMES[action]})")
@@ -184,12 +199,13 @@ def main():
             ok, frame = cap.read()
             if not ok:
                 break
-            disp, final = process_frame(frame, frame_idx)
+            disp, final, paths = process_frame(frame, frame_idx)
             if final:
                 src, shape, action, conf = final
-                print(f"  帧{frame_idx:>4}: {SHAPE_NAMES.get(shape, shape)} 动作{action} ({src} conf={conf:.2f})")
+                print(f"  帧{frame_idx:>4}: {SHAPE_NAMES.get(shape, shape)} 动作{action} "
+                      f"({src} conf={conf:.2f})  [CNN:{paths[0] or '-'} 规则:{paths[1] or '-'}]")
             else:
-                print(f"  帧{frame_idx:>4}: 未识别")
+                print(f"  帧{frame_idx:>4}: 未识别  [CNN:{paths[0] or '-'} 规则:{paths[1] or '-'}]")
             cv2.imshow("Video", disp)
             frame_idx += 1
             if cv2.waitKey(1) & 0xFF == 27:

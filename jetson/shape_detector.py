@@ -45,11 +45,16 @@ class ShapeDetector:
         cooldown_ms=3200,       # 发送冷却
         roi_ratio=1.0,          # 检测ROI：画面下roi_ratio区域（默认全图）
         debug=True,
+        classify_mode="auto",   # auto=CNN主判规则兜底 / cnn=只CNN / rules=纯CV
+        compare_both=False,     # True: 两条路径都算，结果放 dbg
     ):
         self.stable_frames = stable_frames
         self.cooldown_ms = cooldown_ms
         self.roi_ratio = roi_ratio
         self.debug = debug
+        self.classify_mode = os.environ.get("SHAPE_CLASSIFY_MODE",
+                                            classify_mode)
+        self.compare_both = compare_both
 
         # ── 找框参数（集中管理）──
         self.cfg = {
@@ -202,10 +207,7 @@ class ShapeDetector:
         if best is not None:
             warp = self._warp_card(binary, best)
             dbg["warp"] = warp
-            # CNN 主判，规则法兜底（CNN判背景/低置信/不可用 → 规则再判）
-            shape = self._classify_cnn(warp) if self.cnn is not None else None
-            if shape is None:
-                shape = self._classify_shape(warp)
+            shape = self._classify(warp, dbg)
             # quad映射回原图分辨率（找框在960×540上做）
             q_orig = best.astype(np.float32) * np.array(
                 [self._scale_x, self._scale_y], np.float32)
@@ -807,8 +809,33 @@ class ShapeDetector:
         return inter / max(a1 + a2 - inter, 1e-6)
 
     # ═══════════════════════════════════════════════════════════
-    # 形状分类：CNN 主判（_classify_cnn），规则法（_classify_shape）兜底
+    # 形状分类双路径：CNN（_classify_cnn）/ 纯CV规则（_classify_shape）
     # ═══════════════════════════════════════════════════════════
+
+    def _classify(self, warp, dbg):
+        """按 classify_mode 选路径；compare_both 时两路都算存 dbg。
+
+        auto = CNN 主判，判不出（背景/低置信/无权重）回退规则法
+        cnn  = 只用 CNN
+        rules= 只用纯 CV 规则法（资格审核/对比用）
+        """
+        mode = self.classify_mode
+        shape_cnn = shape_rules = None
+        self.last_cnn_prob = None
+        if mode in ("auto", "cnn") and self.cnn is not None:
+            shape_cnn = self._classify_cnn(warp)
+        if (mode == "rules" or self.compare_both
+                or (mode == "auto" and shape_cnn is None)):
+            shape_rules = self._classify_shape(warp)
+        if mode == "rules":
+            shape = shape_rules
+        elif mode == "cnn":
+            shape = shape_cnn
+        else:
+            shape = shape_cnn if shape_cnn is not None else shape_rules
+        dbg["shape_cnn"] = shape_cnn
+        dbg["shape_rules"] = shape_rules
+        return shape
 
     def _classify_cnn(self, warp):
         """ShapeCNN 分类 warp200（黑底白线）→ shape name 或 None。
