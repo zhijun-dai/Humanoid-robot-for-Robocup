@@ -952,9 +952,39 @@ class ShapeDetector:
             return None
 
     def _classify_shape(self, warp):
+        """先直接分类；失败且检测到边缘粘连（田字形）时裁边重试。"""
+        shape = self._classify_shape_once(warp)
+        if shape is not None:
+            return shape
+        trim = self.cfg.get("edge_trim", 0.06)
+        if trim <= 0 or not self._touches_edge(warp):
+            return None
+        # 十字臂与外框粘连成"田"字 → 裁掉边缘 N% 切断粘连
+        m = int(warp.shape[0] * trim)
+        w2 = warp.copy()
+        w2[:m, :] = 0
+        w2[-m:, :] = 0
+        w2[:, :m] = 0
+        w2[:, -m:] = 0
+        return self._classify_shape_once(w2)
+
+    def _touches_edge(self, warp):
+        """最大连通域是否接触图像边缘（粘连/外框残留的特征）。"""
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        w = cv2.morphologyEx(warp, cv2.MORPH_CLOSE, kernel)
+        k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        w = cv2.dilate(w, k3, iterations=1)
+        n, _lab, stats, _ = cv2.connectedComponentsWithStats(w, 8)
+        if n <= 1:
+            return False
+        i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        x, y, ww, hh, _a = stats[i]
+        H, W = w.shape
+        return bool(x == 0 or y == 0 or x + ww >= W or y + hh >= H)
+
+    def _classify_shape_once(self, warp):
         # 远距卡warp后笔画1-2px且有2-10px断口：close(5,5)+dilate(1px)桥接
-        # 笔画碎片（五角星臂/十字臂/三角形边）；图形与外框环间隙≥8px，
-        # 不会把它们连起来
+        # 笔画碎片（五角星臂/十字臂/三角形边）
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         warp = cv2.morphologyEx(warp, cv2.MORPH_CLOSE, kernel)
         k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
