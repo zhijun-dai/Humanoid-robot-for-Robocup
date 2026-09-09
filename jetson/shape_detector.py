@@ -88,7 +88,7 @@ class ShapeDetector:
             "cam_height_cm": _CAM["mount_height_cm"],
             "cam_pitch_deg": _CAM["pitch_deg"],
             "cam_vfov_deg": _CAM["vfov_deg"],
-            "max_dist_cm": float(os.environ.get("SHAPE_MAX_DIST_CM", "100.0")),
+            "max_dist_cm": float(os.environ.get("SHAPE_MAX_DIST_CM", "80.0")),
             # 最远识别距离：面积下限由该距离的图卡投影面积决定（env 可调）
             "ang_min": 40,           # quad内角范围（度）；远桶GT实测38.6-143.5°
             "ang_max": 150,          # 原135/45误杀远桶透视压扁+旋转卡
@@ -264,7 +264,8 @@ class ShapeDetector:
 
         shape = None
         dbg = {"card_found": best is not None, "roi_y0": self._roi_y0,
-               "roi_ratio": self.roi_ratio, "scores": scores[:8]}
+               "roi_ratio": self.roi_ratio, "scores": scores[:8],
+               "binary": binary, "gray": gray}
 
         if best is not None:
             warp = self._warp_card(binary, best)

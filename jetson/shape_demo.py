@@ -15,6 +15,7 @@
 import argparse
 import os
 import sys
+import time
 import cv2
 import numpy as np
 
@@ -127,6 +128,9 @@ def main():
     parser.add_argument("--camera", action="store_true",
                         help="摄像头实时识别（默认 CNN 模式）")
     parser.add_argument("--cam", type=int, default=0, help="摄像头索引")
+    parser.add_argument("--save-mid", type=str, default=None,
+                        help="保存找框输入图/CNN输入图的目录"
+                             "（摄像头模式按 S 键保存当前帧）")
     parser.add_argument("--preprocess", action="store_true",
                         help="YOLO前先做传统CV预处理（灰度/CLAHE/Otsu/形态学）")
     parser.add_argument("--save-pre", type=str, default=None,
@@ -153,6 +157,27 @@ def main():
             print(f"[yolo] 模型加载: {os.path.abspath(weights)}")
         except Exception as e:
             print(f"[yolo] 加载失败（跳过YOLO）: {e}")
+
+    _mid_dir = args.save_mid or os.path.join(
+        _SCRIPT_DIR, "..", "generated", "shape_debug")
+
+    def save_debug(dbg, idx):
+        """保存找框输入图（二值化）+ CNN 输入图（矫正 warp）。"""
+        os.makedirs(_mid_dir, exist_ok=True)
+        ts = time.strftime("%H%M%S")
+        n = 0
+        if dbg.get("binary") is not None:
+            p = os.path.join(_mid_dir, f"findbox_input_{ts}_{idx}.png")
+            cv2.imencode(".png", dbg["binary"])[1].tofile(p)
+            print(f"  找框输入图 → {p}")
+            n += 1
+        if dbg.get("warp") is not None:
+            p = os.path.join(_mid_dir, f"cnn_input_{ts}_{idx}.png")
+            cv2.imencode(".png", dbg["warp"])[1].tofile(p)
+            print(f"  CNN输入图   → {p}")
+            n += 1
+        if n == 0:
+            print("  未检测到图卡，无中间图可存")
 
     def process_frame(frame, frame_idx=0):
         # 找框 + 分类（cv/cnn/both 由 detector 配置决定）
@@ -221,7 +246,7 @@ def main():
         if model is not None:
             info += f" | YOLO: {_n(yo_shape)}"
         put_text(disp, info, (10, 46), (200, 200, 0), 22)
-        return disp, final, (cnn_s, rules_s, hu_b, hu_d)
+        return disp, final, (cnn_s, rules_s, hu_b, hu_d), cv_dbg
 
     # ── 摄像头实时模式（默认纯 CV）──
     if args.camera:
@@ -239,18 +264,21 @@ def main():
         print(f"=== 摄像头 {args.cam} 实时识别（{mode_name}） {aw}x{ah} ===")
         if aw < 1000:
             print("  提示：分辨率偏低，图卡拿近些更容易找到框")
-        print("Q/ESC 退出")
+        print("Q/ESC 退出，S 保存当前找框输入图+CNN输入图")
         frame_idx = 0
         while True:
             ok, frame = cap.read()
             if not ok:
                 print("[WARN] 读帧失败")
                 break
-            disp, final, paths = process_frame(frame, frame_idx)
+            disp, final, paths, dbg = process_frame(frame, frame_idx)
             cv2.imshow("Shape Detect", disp)
             frame_idx += 1
-            if cv2.waitKey(1) & 0xFF in (27, ord("q")):
+            key = cv2.waitKey(1) & 0xFF
+            if key in (27, ord("q")):
                 break
+            elif key == ord("s"):
+                save_debug(dbg, frame_idx)
         cap.release()
         cv2.destroyAllWindows()
         print(f"  共处理 {frame_idx} 帧")
@@ -261,7 +289,7 @@ def main():
         if img is None:
             print(f"无法读取 {args.image}")
             return
-        disp, final, paths = process_frame(img)
+        disp, final, paths, dbg = process_frame(img)
         cnn_s, rules_s, hu_b, hu_d = paths
         print(f"\n=== {os.path.basename(args.image)} ===")
         print(f"  CNN: {SHAPE_NAMES.get(cnn_s, '-') if cnn_s else '-'}"
@@ -274,6 +302,7 @@ def main():
             print(f"  方案: {src}  置信度: {conf:.2f}")
         else:
             print("  未识别")
+        save_debug(dbg, 0)
         out = os.path.join(_SCRIPT_DIR, "..", "6_pictures", "demo_result.jpg")
         cv2.imencode(".jpg", disp)[1].tofile(os.path.abspath(out))
         print(f"  结果图: {os.path.abspath(out)}")
@@ -293,7 +322,7 @@ def main():
             ok, frame = cap.read()
             if not ok:
                 break
-            disp, final, paths = process_frame(frame, frame_idx)
+            disp, final, paths, dbg = process_frame(frame, frame_idx)
             if final:
                 src, shape, action, conf = final
                 print(f"  帧{frame_idx:>4}: {SHAPE_NAMES.get(shape, shape)} 动作{action} "
