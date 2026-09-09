@@ -29,6 +29,10 @@ except Exception:
     ShapeCNN = None
     CLASS_NAMES = None
 
+from camera_config import load as _load_camera
+
+_CAM = _load_camera()
+
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -80,10 +84,10 @@ class ShapeDetector:
             "aspect_max": 5.0,
             "area_min": 550,         # 面积下限（__init__ 按相机几何覆盖）
             "area_max": 20000,
-            # 相机几何（用于按距离算图卡像素面积下限；图卡 10cm×10cm 平放）
-            "cam_height_cm": 40.0,
-            "cam_pitch_deg": 45.0,
-            "cam_vfov_deg": 56.2,
+            # 相机几何（config/cameras.json，用于按距离算图卡像素面积下限）
+            "cam_height_cm": _CAM["mount_height_cm"],
+            "cam_pitch_deg": _CAM["pitch_deg"],
+            "cam_vfov_deg": _CAM["vfov_deg"],
             "max_dist_cm": float(os.environ.get("SHAPE_MAX_DIST_CM", "100.0")),
             # 最远识别距离：面积下限由该距离的图卡投影面积决定（env 可调）
             "ang_min": 40,           # quad内角范围（度）；远桶GT实测38.6-143.5°

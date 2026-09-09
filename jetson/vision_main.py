@@ -9,12 +9,14 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from line_detector_v1_warp import LineDetector
+from camera_config import load as _load_camera
 
+_CAM = _load_camera()
 
-# ── 可调参数 ──
-CAM_IDX = 0          # 0=内置 1=USB（不确定就试）
-CAM_W = 1280
-CAM_H = 720
+# ── 可调参数（config/cameras.json，env 可覆盖）──
+CAM_IDX = int(os.environ.get("CAM_IDX", str(_CAM["index"])))
+CAM_W = int(_CAM["width"])
+CAM_H = int(_CAM["height"])
 
 
 def main():
@@ -31,7 +33,9 @@ def main():
 
     # 检测器
     ld = LineDetector(cam_w=actual_w, cam_h=actual_h,
-                      cam_height_cm=40.0, cam_pitch_deg=45.0, cam_vfov_deg=56.2)
+                      cam_height_cm=_CAM["mount_height_cm"],
+                      cam_pitch_deg=_CAM["pitch_deg"],
+                      cam_vfov_deg=_CAM["vfov_deg"])
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
     print("  巡线 + 红条 + 图卡 (几何形状)")

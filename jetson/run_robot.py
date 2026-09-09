@@ -39,15 +39,18 @@ def clamp(v, lo, hi):
 # Config — all overridable via env vars
 # ═══════════════════════════════════════════════════════════════════════
 
-# Camera
-CAM_IDX  = int(os.environ.get("CAM_IDX", "0"))
-CAM_W    = 1280
-CAM_H    = 720
+# Camera（config/cameras.json，env 可覆盖）
+from camera_config import load as _load_camera
+_CAM = _load_camera()
+
+CAM_IDX  = int(os.environ.get("CAM_IDX", str(_CAM["index"])))
+CAM_W    = int(_CAM["width"])
+CAM_H    = int(_CAM["height"])
 
 # Detector
-CAM_HEIGHT_CM  = float(os.environ.get("CAM_HEIGHT_CM",  "40.0"))
-CAM_PITCH_DEG  = float(os.environ.get("CAM_PITCH_DEG",  "45.0"))
-CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",   "56.2"))
+CAM_HEIGHT_CM  = float(os.environ.get("CAM_HEIGHT_CM", str(_CAM["mount_height_cm"])))
+CAM_PITCH_DEG  = float(os.environ.get("CAM_PITCH_DEG", str(_CAM["pitch_deg"])))
+CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",  str(_CAM["vfov_deg"])))
 
 # ── 机器人步态参数 (机器人侧标定, 与测试车不同) ──
 STEP_LEN_CM    = float(os.environ.get("STEP_LEN_CM",      "10.0"))  # 一步前进距离 cm
