@@ -15,6 +15,7 @@ v2 找框重构：线宽选择性预处理（blackhat核9 + 各向异性闭 + �
 动作映射（与2025二维码1-6对应）：
   圆形=1举左手 五角星=2举右手 正方形=3抬左腿 菱形=4抬右腿 十字形=5举双手 三角形=6摇头
 """
+import math
 import os
 import cv2
 import time
@@ -43,7 +44,7 @@ class ShapeDetector:
         self,
         stable_frames=3,        # 连续确认帧数
         cooldown_ms=3200,       # 发送冷却
-        roi_ratio=0.5,          # 检测ROI：画面下roi_ratio区域（默认下半）
+        roi_ratio=1.0,          # 检测ROI：画面下roi_ratio区域（默认全图）
         debug=True,
         classify_mode="auto",   # auto=CNN主判规则兜底 / cnn=只CNN / rules=纯CV
         compare_both=False,     # True: 两条路径都算，结果放 dbg
@@ -77,8 +78,14 @@ class ShapeDetector:
             "min_h": 12,             # 框最小高（56×14@1.3m）
             "aspect_min": 1.0,       # 宽高比下限（真实wh最低1.9；1.0兜住正视图/极端姿态，由其他验证把关）
             "aspect_max": 5.0,
-            "area_min": 550,         # 面积下限（56×14=784）
+            "area_min": 550,         # 面积下限（__init__ 按相机几何覆盖）
             "area_max": 20000,
+            # 相机几何（用于按距离算图卡像素面积下限；图卡 10cm×10cm 平放）
+            "cam_height_cm": 40.0,
+            "cam_pitch_deg": 45.0,
+            "cam_vfov_deg": 56.2,
+            "max_dist_cm": float(os.environ.get("SHAPE_MAX_DIST_CM", "100.0")),
+            # 最远识别距离：面积下限由该距离的图卡投影面积决定（env 可调）
             "ang_min": 40,           # quad内角范围（度）；远桶GT实测38.6-143.5°
             "ang_max": 150,          # 原135/45误杀远桶透视压扁+旋转卡
             "edge_h_tol": 25.0,      # 边方向容差：至少2条边接近水平（±此角度）
@@ -115,6 +122,10 @@ class ShapeDetector:
         self.first_candidate_ms = None
         self.last_quad = None       # 帧间跟踪锁
 
+        # ── 面积下限：按相机几何算（图卡在 max_dist_cm 处的投影像素面积）──
+        self.cfg["area_min"] = int(self._card_area_at_dist(
+            self.cfg["max_dist_cm"]))
+
         # ── Hu 矩模板（辅助判据，不改判定树；缺失则跳过）──
         self.hu_templates = {}
         self.last_hu = None
@@ -145,6 +156,34 @@ class ShapeDetector:
                 print(f"[shape] WARNING: CNN 加载失败({e})，回退规则分类")
                 self.cnn = None
 
+    def _card_area_at_dist(self, z_cm):
+        """图卡（10cm×10cm 平放地面）在水平距离 z_cm 处的工作图像素面积。
+
+        pinhole 模型（工作图 960×540 内参）：
+          v(z') = cy + fy·(h·cosθ − z'·sinθ)/(h·sinθ + z'·cosθ)
+        图卡近/远边（z∓5cm）投影出垂直跨度；水平跨度 = fx·10/Zc。
+        面积随距离急剧下降（近处大、远处小），用于按距离设面积门槛。
+        """
+        h = self.cfg["cam_height_cm"]
+        th = math.radians(self.cfg["cam_pitch_deg"])
+        vfov = math.radians(self.cfg["cam_vfov_deg"])
+        fy = WORK_H / (2.0 * math.tan(vfov / 2.0))
+        hfov = 2.0 * math.atan(math.tan(vfov / 2.0) * WORK_W / WORK_H)
+        fx = WORK_W / (2.0 * math.tan(hfov / 2.0))
+
+        def v_of(z):
+            z = max(1.0, z)
+            yc = h * math.cos(th) - z * math.sin(th)
+            zc = h * math.sin(th) + z * math.cos(th)
+            return WORK_H / 2.0 + fy * yc / zc, zc
+
+        v_near, _ = v_of(z_cm - 5.0)
+        v_far, _ = v_of(z_cm + 5.0)
+        dv = abs(v_near - v_far)
+        _, zc_c = v_of(z_cm)
+        du = fx * 10.0 / max(zc_c, 1.0)
+        return dv * du
+
     # ═══════════════════════════════════════════════════════════
     # 主入口
     # ═══════════════════════════════════════════════════════════
@@ -162,17 +201,24 @@ class ShapeDetector:
         h0, w0 = gray.shape[:2]
         if self.roi_ratio < 1.0:
             self._roi_y0 = int(h0 * (1.0 - self.roi_ratio))
-            gray = gray[self._roi_y0:, :]
+            roi = gray[self._roi_y0:, :]
         else:
             self._roi_y0 = 0
-        h_roi = gray.shape[0]
-        # 缩放基准用 ROI 后的高度（quad 映射回原图时再加 _roi_y0）
-        self._scale_x = w0 / WORK_W
-        self._scale_y = h_roi / WORK_H
-
-        # resize到固定工作分辨率（960×540）
-        if gray.shape[:2] != (WORK_H, WORK_W):
-            gray = cv2.resize(gray, (WORK_W, WORK_H))
+            roi = gray
+        # 等比缩放到工作图（不足处补黑边）——避免非等比拉伸导致图卡变形
+        rh, rw = roi.shape[:2]
+        s = min(WORK_W / w0, WORK_H / rh)
+        nw = max(1, int(round(w0 * s)))
+        nh = max(1, int(round(rh * s)))
+        roi_s = cv2.resize(roi, (nw, nh))
+        if (nw, nh) == (WORK_W, WORK_H):
+            gray = roi_s
+        else:
+            gray = np.zeros((WORK_H, WORK_W), np.uint8)
+            gray[:nh, :nw] = roi_s
+        # 映射回原图：x_orig = x_work·(w0/nw)，y_orig = y_work·(rh/nh) + roi_y0
+        self._scale_x = w0 / nw
+        self._scale_y = rh / nh
 
         # S1 线宽选择性二值化（线=白255）
         binary = self._binary_selective(gray)

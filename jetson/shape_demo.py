@@ -140,7 +140,7 @@ def main():
                 "both": ("auto", True)}
     cm, cb = mode_map[method]
     detector = ShapeDetector(stable_frames=1, cooldown_ms=0, debug=False,
-                             roi_ratio=0.5, classify_mode=cm, compare_both=cb)
+                             roi_ratio=1.0, classify_mode=cm, compare_both=cb)
 
     # YOLO模型（可选）
     model = None
