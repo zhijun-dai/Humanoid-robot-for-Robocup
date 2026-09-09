@@ -207,10 +207,17 @@ def main():
 
         def _n(s):
             return SHAPE_NAMES.get(s, s) if s else "-"
-        info = f"CNN: {_n(cnn_s)} | 规则: {_n(rules_s)}"
         hu_b, hu_d = cv_dbg.get("hu_best"), cv_dbg.get("hu_dist")
-        if hu_b:
-            info += f" | Hu: {_n(hu_b)}({hu_d:.3f})"
+        if detector.classify_mode == "rules":
+            info = f"规则: {_n(rules_s)}"
+            if hu_b:
+                info += f" | Hu: {_n(hu_b)}({hu_d:.3f})"
+        elif detector.classify_mode == "cnn":
+            info = f"CNN: {_n(cnn_s)}"
+        else:
+            info = f"CNN: {_n(cnn_s)} | 规则: {_n(rules_s)}"
+            if hu_b:
+                info += f" | Hu: {_n(hu_b)}({hu_d:.3f})"
         if model is not None:
             info += f" | YOLO: {_n(yo_shape)}"
         put_text(disp, info, (10, 46), (200, 200, 0), 22)
