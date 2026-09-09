@@ -50,7 +50,7 @@ class ShapeDetector:
         cooldown_ms=3200,       # 发送冷却
         roi_ratio=1.0,          # 检测ROI：画面下roi_ratio区域（默认全图）
         debug=True,
-        classify_mode="auto",   # auto=CNN主判规则兜底 / cnn=只CNN / rules=纯CV
+        classify_mode="rules",  # rules=纯CV(当前主线) / cnn=只CNN / auto=CNN主判规则兜底
         compare_both=False,     # True: 两条路径都算，结果放 dbg
     ):
         self.stable_frames = stable_frames
@@ -1069,15 +1069,10 @@ class ShapeDetector:
                          - (b[1] - a[1]) * (c[0] - b[0]))
                 if cross * sarea < 0:
                     n_conc += 1
-        # 轮廓点到质心距离的变异系数（圆形判据，对锯齿不敏感）
-        M = cv2.moments(contour)
-        cv_dist = 1.0
-        if M["m00"] > 0:
-            cx_m = M["m10"] / M["m00"]
-            cy_m = M["m01"] / M["m00"]
-            dists = np.sqrt((contour[:, 0, 0] - cx_m) ** 2
-                            + (contour[:, 0, 1] - cy_m) ** 2)
-            cv_dist = float(np.std(dists) / max(np.mean(dists), 1e-6))
+        # 圆度 4πA/P²（不依赖轮廓点密度——CHAIN_APPROX_SIMPLE 会把直线
+        # 轮廓压成拐点，使"半径变异系数"对多边形失真）：
+        # 圆=1.00、正方形/菱形=0.785、等边三角=0.605、五角星≈0.5、十字更小
+        circularity = 4.0 * math.pi * area / max(peri * peri, 1e-6)
         rect = cv2.minAreaRect(contour)
         rw, rh = rect[1]
         fill_rect = area / max(rw * rh, 1e-6)
@@ -1097,14 +1092,16 @@ class ShapeDetector:
         # 凸形
         if n_vertices == 3:
             return "triangle"
+        # 圆形：fill≈π/4=0.785（方形/菱形≈1.0、三角≈0.55）+ 圆度>0.8
+        # 圆度用 4πA/P²（不受轮廓点密度影响）；minAreaRect 对圆的角度
+        # 不确定，必须先于"菱形(ang≥25)"判定
+        if 0.72 <= fill_rect <= 0.87 and circularity >= 0.80:
+            return "circle"
+        # 菱形 = 旋转45°的方形（minAreaRect 角度≈45°）
         if ang >= 25.0:
             return "diamond"
         if fill_rect >= 0.84:
             return "square"
-        # 圆形（fillR 0.66-0.85、半径变异小）vs 三角形
-        # （fillR 0.53-0.75、半径变异大）——cvd分界0.13
-        if cv_dist < 0.13:
-            return "circle"
         return "triangle"
 
     # ═══════════════════════════════════════════════════════════

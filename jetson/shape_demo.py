@@ -124,9 +124,9 @@ def main():
     parser.add_argument("--yolo", action="store_true",
                         help="启用YOLO方案（需ultralytics+权重）")
     parser.add_argument("--method", choices=("cv", "cnn", "both"), default=None,
-                        help="分类路径: cv=纯CV规则 / cnn=神经网络(摄像头模式默认) / both=两路都算")
+                        help="分类路径: cv=纯CV规则(摄像头模式默认) / cnn=神经网络 / both=两路都算")
     parser.add_argument("--camera", action="store_true",
-                        help="摄像头实时识别（默认 CNN 模式）")
+                        help="摄像头实时识别（默认纯CV）")
     parser.add_argument("--cam", type=int, default=0, help="摄像头索引")
     parser.add_argument("--save-mid", type=str, default=None,
                         help="保存找框输入图/CNN输入图的目录"
@@ -137,8 +137,8 @@ def main():
                         help="保存预处理中间图到指定路径（调试用）")
     args = parser.parse_args()
 
-    # 摄像头模式默认 CNN，其余默认两路对比
-    method = args.method or ("cnn" if args.camera else "both")
+    # 摄像头模式默认纯 CV，其余默认两路对比
+    method = args.method or ("cv" if args.camera else "both")
     # 分类路径: cv→rules, cnn→cnn, both→auto+两路都算
     mode_map = {"cv": ("rules", False), "cnn": ("cnn", False),
                 "both": ("auto", True)}
