@@ -389,10 +389,11 @@ class LineDetector:
     def _pixel_is_red(self, bgr, x, y):
         if not self.red_detect_enable:
             return False
-        r = int(bgr[y, x, 2])
-        g = int(bgr[y, x, 1])
-        b = int(bgr[y, x, 0])
-        return (r >= self.red_min_r) and ((r - g) >= self.red_dom_margin) and ((r - b) >= self.red_dom_margin)
+        px = bgr[y:y + 1, x:x + 1]
+        hh, ss, vv = cv2.cvtColor(px, cv2.COLOR_BGR2HSV)[0, 0]
+        hh, ss, vv = int(hh), int(ss), int(vv)
+        return ((hh <= self.red_h_max or hh >= self.red_h_min)
+                and ss >= self.red_s_min and vv >= self.red_v_min)
 
     # ═══════════════════════════════════════════════════════════
     # Obstacle detection
@@ -404,10 +405,13 @@ class LineDetector:
         black_block = False
 
         if self.red_detect_enable:
-            rb = bgr[y, x0:x1 + 1, 0].astype(np.int32)
-            rg = bgr[y, x0:x1 + 1, 1].astype(np.int32)
-            rr = bgr[y, x0:x1 + 1, 2].astype(np.int32)
-            is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
+            row = bgr[y:y + 1, x0:x1 + 1]
+            hsv = cv2.cvtColor(row, cv2.COLOR_BGR2HSV)
+            hh = hsv[:, :, 0].astype(np.int32)
+            ss = hsv[:, :, 1].astype(np.int32)
+            vv = hsv[:, :, 2].astype(np.int32)
+            is_red = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
+                      & (ss >= self.red_s_min) & (vv >= self.red_v_min))
             if np.count_nonzero(is_red) / n >= self.red_row_ratio:
                 red_block = True
 

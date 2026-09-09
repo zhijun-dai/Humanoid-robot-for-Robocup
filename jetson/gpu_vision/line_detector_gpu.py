@@ -165,12 +165,16 @@ class LineDetector:
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
         self.cross_black_cover_ratio = 0.20
         self.red_detect_enable = True
-        self.red_min_r = 105
-        self.red_dom_margin = 28
+        # HSV 判红（同 CPU 版）：只看色调/饱和度，不管明暗
+        self.red_h_max = 15
+        self.red_h_min = 165
+        self.red_s_min = 70
+        self.red_v_min = 40
+        self.red_min_pixels = 50
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_confirm_frames = 3
+        self.red_bar_confirm_frames = 4
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
@@ -393,10 +397,11 @@ class LineDetector:
     def _pixel_is_red(self, bgr, x, y):
         if not self.red_detect_enable:
             return False
-        r = int(bgr[y, x, 2])
-        g = int(bgr[y, x, 1])
-        b = int(bgr[y, x, 0])
-        return (r >= self.red_min_r) and ((r - g) >= self.red_dom_margin) and ((r - b) >= self.red_dom_margin)
+        px = bgr[y:y + 1, x:x + 1]
+        hh, ss, vv = cv2.cvtColor(px, cv2.COLOR_BGR2HSV)[0, 0]
+        hh, ss, vv = int(hh), int(ss), int(vv)
+        return ((hh <= self.red_h_max or hh >= self.red_h_min)
+                and ss >= self.red_s_min and vv >= self.red_v_min)
 
     # ═══════════════════════════════════════════════════════════
     # Obstacle detection
@@ -408,10 +413,13 @@ class LineDetector:
         black_block = False
 
         if self.red_detect_enable:
-            rb = bgr[y, x0:x1 + 1, 0].astype(np.int32)
-            rg = bgr[y, x0:x1 + 1, 1].astype(np.int32)
-            rr = bgr[y, x0:x1 + 1, 2].astype(np.int32)
-            is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
+            row = bgr[y:y + 1, x0:x1 + 1]
+            hsv = cv2.cvtColor(row, cv2.COLOR_BGR2HSV)
+            hh = hsv[:, :, 0].astype(np.int32)
+            ss = hsv[:, :, 1].astype(np.int32)
+            vv = hsv[:, :, 2].astype(np.int32)
+            is_red = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
+                      & (ss >= self.red_s_min) & (vv >= self.red_v_min))
             if np.count_nonzero(is_red) / n >= self.red_row_ratio:
                 red_block = True
 
@@ -465,12 +473,14 @@ class LineDetector:
           v_foot - lowest red row (bar near edge)
           z_cm   - exact ground distance of v_foot via pinhole back-projection
         """
-        rb = bgr[:, :, 0].astype(np.int32)
-        rg = bgr[:, :, 1].astype(np.int32)
-        rr = bgr[:, :, 2].astype(np.int32)
-        is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        hh = hsv[:, :, 0].astype(np.int32)
+        ss = hsv[:, :, 1].astype(np.int32)
+        vv = hsv[:, :, 2].astype(np.int32)
+        is_red = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
+                  & (ss >= self.red_s_min) & (vv >= self.red_v_min))
 
-        if np.count_nonzero(is_red) < 50:
+        if np.count_nonzero(is_red) < self.red_min_pixels:
             return None
 
         ys, xs = np.where(is_red)
