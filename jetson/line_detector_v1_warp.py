@@ -156,13 +156,13 @@ class LineDetector:
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
         self.cross_black_cover_ratio = 0.20
         self.red_detect_enable = True
-        self.red_min_r = 130        # 提高：要求更饱和的红（原105易误检暖色物体）
-        self.red_dom_margin = 45    # 提高：R 需明显高于 G/B（原28）
-        self.red_min_pixels = 200   # 红像素面积下限（原50，噪声也能满足）
+        self.red_min_r = 105        # 原值（实测红条颜色可达标；调高会漏检）
+        self.red_dom_margin = 28    # 原值
+        self.red_min_pixels = 50    # 原值
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_confirm_frames = 4   # 连续确认帧数（去抖）
+        self.red_bar_confirm_frames = 4   # 连续确认帧数（原3，去抖）
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
