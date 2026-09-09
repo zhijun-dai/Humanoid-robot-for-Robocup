@@ -39,6 +39,46 @@ YOLO_CLS = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}
 YOLO_NAMES = {0: "circle", 1: "pentagon", 2: "square",
               3: "diamond", 4: "cross", 5: "triangle"}
 
+# ── 中文绘制（cv2.putText 不支持中文，用 PIL）──
+_FONT_CACHE = {}
+
+
+def _load_font(size):
+    if size in _FONT_CACHE:
+        return _FONT_CACHE[size]
+    try:
+        from PIL import ImageFont
+    except Exception:
+        _FONT_CACHE[size] = None
+        return None
+    for p in ("C:/Windows/Fonts/msyh.ttc",
+              "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+              "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"):
+        if os.path.exists(p):
+            try:
+                f = ImageFont.truetype(p, size)
+                _FONT_CACHE[size] = f
+                return f
+            except Exception:
+                pass
+    _FONT_CACHE[size] = None
+    return None
+
+
+def put_text(img, text, org, color_bgr=(0, 0, 255), size=26):
+    """绘制文本（支持中文；无字体时回退英文近似）。"""
+    font = _load_font(size)
+    if font is None:
+        cv2.putText(img, text.encode("ascii", "replace").decode(), org,
+                    cv2.FONT_HERSHEY_SIMPLEX, size / 36.0, color_bgr, 2)
+        return img
+    from PIL import Image, ImageDraw
+    pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    ImageDraw.Draw(pil).text(org, text, font=font,
+                             fill=tuple(reversed(color_bgr)))
+    img[:] = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+    return img
+
 
 def load_image(path):
     data = np.fromfile(path, dtype=np.uint8)
@@ -163,8 +203,7 @@ def main():
                      f"{ACTION_NAMES[action]} | {conf_s}")
         else:
             label = "未识别"
-        cv2.putText(disp, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7, (0, 0, 255), 2)
+        put_text(disp, label, (10, 8), (0, 0, 255), 30)
 
         def _n(s):
             return SHAPE_NAMES.get(s, s) if s else "-"
@@ -174,8 +213,7 @@ def main():
             info += f" | Hu: {_n(hu_b)}({hu_d:.3f})"
         if model is not None:
             info += f" | YOLO: {_n(yo_shape)}"
-        cv2.putText(disp, info, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6, (200, 200, 0), 2)
+        put_text(disp, info, (10, 46), (200, 200, 0), 22)
         return disp, final, (cnn_s, rules_s, hu_b, hu_d)
 
     # ── 摄像头实时模式（默认纯 CV）──
