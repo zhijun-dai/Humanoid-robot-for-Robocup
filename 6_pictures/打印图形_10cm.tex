@@ -1,0 +1,37 @@
+\documentclass[10pt]{ctexart}
+\usepackage[a3paper,landscape,margin=1cm]{geometry}
+\usepackage{tikz}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+% 比赛图形卡：每个图形外沿最大跨度 10cm，线宽 0.5cm
+\tikzset{shapeline/.style={line width=0.5cm, line join=round, black}}
+
+\begin{document}
+\begin{tikzpicture}[x=1cm, y=1cm]
+    \begin{scope}[shift={(6.5,-6.5)}]
+      \draw[shapeline] (0,0) circle (4.7500cm);
+      \node[font=\small] at (0,-6.0) {圆形};
+    \end{scope}
+    \begin{scope}[shift={(20.0,-6.5)}]
+      \draw[shapeline] (0.0000,4.9944) -- (-1.1213,1.5434) -- (-4.7500,1.5434) -- (-1.8143,-0.5895) -- (-2.9357,-4.0406) -- (-0.0000,-1.9077) -- (2.9357,-4.0406) -- (1.8143,-0.5895) -- (4.7500,1.5434) -- (1.1213,1.5434) -- cycle;
+      \node[font=\small] at (0,-6.0) {五角星};
+    \end{scope}
+    \begin{scope}[shift={(33.5,-6.5)}]
+      \draw[shapeline] (-4.7500,-4.7500) -- (4.7500,-4.7500) -- (4.7500,4.7500) -- (-4.7500,4.7500) -- cycle;
+      \node[font=\small] at (0,-6.0) {正方形};
+    \end{scope}
+    \begin{scope}[shift={(6.5,-19.5)}]
+      \draw[shapeline] (4.7500,0.0000) -- (0.0000,4.7500) -- (-4.7500,0.0000) -- (0.0000,-4.7500) -- cycle;
+      \node[font=\small] at (0,-6.0) {菱形};
+    \end{scope}
+    \begin{scope}[shift={(20.0,-19.5)}]
+      \draw[shapeline] (-0.7500,4.7500) -- (0.7500,4.7500) -- (0.7500,0.7500) -- (4.7500,0.7500) -- (4.7500,-0.7500) -- (0.7500,-0.7500) -- (0.7500,-4.7500) -- (-0.7500,-4.7500) -- (-0.7500,-0.7500) -- (-4.7500,-0.7500) -- (-4.7500,0.7500) -- (-0.7500,0.7500) -- cycle;
+      \node[font=\small] at (0,-6.0) {十字形};
+    \end{scope}
+    \begin{scope}[shift={(33.5,-19.5)}]
+      \draw[shapeline] (0.0000,5.4848) -- (-4.7500,-2.7424) -- (4.7500,-2.7424) -- cycle;
+      \node[font=\small] at (0,-6.0) {三角形};
+    \end{scope}
+\end{tikzpicture}
+\end{document}
