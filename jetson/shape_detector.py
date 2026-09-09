@@ -277,6 +277,7 @@ class ShapeDetector:
                 [self._scale_x, self._scale_y], np.float32)
             q_orig[:, 1] += self._roi_y0
             dbg["quad"] = q_orig
+            dbg["quad_work"] = best  # 工作图(960×540)坐标，用于叠加在二值图上
             dbg["closure"] = best_score
         else:
             self.last_cnn_prob = None  # 无框路径未跑 CNN

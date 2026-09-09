@@ -208,11 +208,16 @@ def main():
         else:
             final = None
 
-        # 可视化
-        disp = frame.copy()
-        if cv_quad is not None:
-            pts = cv_quad.astype(np.int32).reshape(-1, 1, 2)
-            cv2.polylines(disp, [pts], True, (0, 255, 0), 3)
+        # 可视化底图：找框输入图（二值化 960×540，线=白）
+        b = cv_dbg.get("binary")
+        if b is not None:
+            disp = cv2.cvtColor(b, cv2.COLOR_GRAY2BGR)
+            qw = cv_dbg.get("quad_work")
+            if qw is not None:
+                cv2.polylines(disp, [qw.astype(np.int32).reshape(-1, 1, 2)],
+                              True, (0, 255, 0), 2)
+        else:
+            disp = frame.copy()
         if yo_box is not None:
             x1, y1, x2, y2 = [int(v) for v in yo_box]
             cv2.rectangle(disp, (x1, y1), (x2, y2), (255, 0, 0), 3)
@@ -227,8 +232,20 @@ def main():
             label = (f"{SHAPE_NAMES.get(shape, shape)} 动作{action} "
                      f"{ACTION_NAMES[action]} | {conf_s}")
         else:
-            label = "未识别"
-        put_text(disp, label, (10, 8), (0, 0, 255), 30)
+            # 找到框但未识别 → 显示原因
+            if cv_dbg.get("card_found"):
+                p = cv_dbg.get("cnn_prob")
+                rs = cv_dbg.get("shape_rules")
+                why = []
+                if p is not None:
+                    why.append(f"CNN最高概率 {p:.2f}")
+                if rs is None:
+                    why.append("规则法判不出")
+                label = "找到框但未识别" + ("（" + "，".join(why) + "）"
+                                          if why else "")
+            else:
+                label = "未找到框"
+        put_text(disp, label, (10, 8), (0, 0, 255), 26)
 
         def _n(s):
             return SHAPE_NAMES.get(s, s) if s else "-"
@@ -272,7 +289,7 @@ def main():
                 print("[WARN] 读帧失败")
                 break
             disp, final, paths, dbg = process_frame(frame, frame_idx)
-            cv2.imshow("Shape Detect", disp)
+            cv2.imshow("Find-box input (binary)", disp)
             frame_idx += 1
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q")):
