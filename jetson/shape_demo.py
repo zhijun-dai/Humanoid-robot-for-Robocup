@@ -186,10 +186,14 @@ def main():
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         if not cap.isOpened():
-            print(f"无法打开摄像头 {args.cam}")
+            print(f"无法打开摄像头 {args.cam}（换个索引试 --cam 1）")
             return
+        aw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        ah = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         mode_name = {"rules": "纯CV", "cnn": "CNN", "auto": "两路对比"}[cm]
-        print(f"=== 摄像头 {args.cam} 实时识别（{mode_name}）===")
+        print(f"=== 摄像头 {args.cam} 实时识别（{mode_name}） {aw}x{ah} ===")
+        if aw < 1000:
+            print("  提示：分辨率偏低，图卡拿近些更容易找到框")
         print("Q/ESC 退出")
         frame_idx = 0
         while True:
