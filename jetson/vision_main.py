@@ -21,15 +21,22 @@ CAM_H = int(_CAM["height"])
 
 def main():
     print(f"Opening camera [{CAM_IDX}] ({CAM_W}x{CAM_H})...")
-    cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
+    # Windows 默认后端(MSMF)，失败回退 DSHOW；Linux 用 V4L2
+    if sys.platform == "win32":
+        cap = cv2.VideoCapture(CAM_IDX)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
+    else:
+        cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
+    if not cap.isOpened():
+        print(f"无法打开摄像头 {CAM_IDX}（试 --cam 0 或 --cam 1）")
+        return
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Actual: {actual_w}x{actual_h}")
-    if not cap.isOpened():
-        print("Failed to open camera! Try changing CAM_IDX.")
-        return
 
     # 检测器
     ld = LineDetector(cam_w=actual_w, cam_h=actual_h,
@@ -140,4 +147,10 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="巡线 + 红条距离 实时可视化")
+    ap.add_argument("--cam", type=int, default=CAM_IDX,
+                    help="摄像头索引（0=内置 1=USB）")
+    _args = ap.parse_args()
+    CAM_IDX = _args.cam
     main()
