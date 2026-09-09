@@ -11,16 +11,6 @@
       "hfov_deg": 70.9,
       "mount_height_cm": 40.0,
       "pitch_deg": 45.0
-    },
-    "laptop_test": {
-      "label": "笔记本内置摄像头（桌面测试用，几何参数待标定）",
-      "index": 0,
-      "width": 1280,
-      "height": 720,
-      "vfov_deg": 45.0,
-      "hfov_deg": 60.0,
-      "mount_height_cm": 40.0,
-      "pitch_deg": 45.0
     }
   }
 }
