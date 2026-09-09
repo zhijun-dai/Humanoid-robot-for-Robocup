@@ -26,7 +26,7 @@ def kernel(shape, size):
 
 
 def _morph(gpu, op, shape, size, iters=1):
-    """GpuMat 形态学滤波（filter 对象缓存于内部，apply 复用）。"""
+    """GpuMat 形态学滤波（核缓存复用；filter 对象每次重建）。"""
     k_gpu = cv2.cuda_GpuMat()
     k_gpu.upload(kernel(shape, size))
     flt = cv2.cuda.createMorphologyFilter(op, cv2.CV_8UC1, k_gpu)

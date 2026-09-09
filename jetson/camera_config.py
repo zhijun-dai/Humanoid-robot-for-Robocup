@@ -19,7 +19,6 @@ _DEFAULTS = {
     "width": 1280,
     "height": 720,
     "vfov_deg": 56.2,
-    "hfov_deg": 70.9,
     "mount_height_cm": 40.0,
     "pitch_deg": 45.0,
 }
@@ -39,13 +38,3 @@ def load(profile=None):
     except Exception:
         pass
     return cam
-
-
-def profiles():
-    """列出所有可用配置名。"""
-    try:
-        with open(_PATH, encoding="utf-8") as f:
-            cfg = json.load(f)
-        return list(cfg["cameras"].keys())
-    except Exception:
-        return []

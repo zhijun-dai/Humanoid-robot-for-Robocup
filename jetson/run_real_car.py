@@ -4,26 +4,17 @@ USB camera → LineDetector → dual-mode PID + lost recovery → 4 wheel speeds
 Optional serial output to MCU at 115200 baud, ~10 Hz.
 """
 
-import math, os, sys, time, json, atexit
+import math, os, sys, time, atexit
 import numpy as np
 import cv2
 
-# ── Path to V1 detector ──
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
-_V1_DIR = os.path.join(_SCRIPT_DIR, "v1_production")
-if _V1_DIR not in sys.path:
-    sys.path.insert(0, _V1_DIR)
 
 from line_detector_v1_warp import LineDetector
 from shape_detector import ShapeDetector
-
-
-def clamp(v, lo, hi):
-    if v < lo: return lo
-    if v > hi: return hi
-    return v
+from utils import clamp, open_camera, show_debug_windows
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -138,20 +129,10 @@ def main():
     global SERIAL_ENABLED
 
     # ── Camera ──
-    cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  CAM_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
-
+    cap = open_camera(CAM_IDX, CAM_W, CAM_H)
     if not cap.isOpened():
         print(f"[ERROR] Cannot open camera index {CAM_IDX}")
         sys.exit(1)
-
-    # DSHOW sometimes reports 0x0 before first grab — read one frame to wake it
-    for _ in range(3):
-        ok, _ = cap.read()
-        if ok:
-            break
-        time.sleep(0.05)
 
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -220,7 +201,7 @@ def main():
         if sm_mode == SM_DRIVE:
             sm_frame_count += 1
             if sm_frame_count % 3 == 0:
-                shape_action, shape_dbg = sd.update(bgr)
+                shape_action = sd.update(bgr)[0]
                 if shape_action is not None:
                     sm_mode = SM_ACTION
                     sm_action = shape_action
@@ -341,19 +322,7 @@ def main():
         _put(frame_disp, "Q=quit S=toggle_serial", 140, (200, 200, 200))
         cv2.imshow("1.Original", frame_disp)
 
-        # 2.Warp (birdseye)
-        if "bird" in dbg and dbg["bird"] is not None:
-            bird_bgr = cv2.cvtColor(dbg["bird"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_bgr, (320, 400), interpolation=cv2.INTER_NEAREST))
-
-        # 3.Adaptive (binary)
-        if "binary_raw" in dbg and dbg["binary_raw"] is not None:
-            b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("3.Adaptive (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
-
-        # 4.Close+Fit — V1 annotated birdseye
-        if _vis is not None:
-            cv2.imshow("4.Close+Fit", cv2.resize(_vis, (320, 400), interpolation=cv2.INTER_NEAREST))
+        show_debug_windows(dbg, _vis)
 
         # ── Keyboard ──
         key = cv2.waitKey(1) & 0xFF

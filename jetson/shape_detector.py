@@ -6,7 +6,7 @@ v2 找框重构：线宽选择性预处理（blackhat核9 + 各向异性闭 + �
 
 场景：图卡平贴白色有污渍地面，赛道粗黑线（2cm）干扰。
 粗线被 blackhat 核9 抑制 + 笔画宽[1.5,7]px 拒绝；细框线（0.5cm→3-5px）保留。
-逐操作审阅巡线管线（line_detector_v1_warp.py 914-957行）：
+逐操作审阅巡线管线（line_detector_v1_warp.py 预处理链 887-910行）：
   blackhat→保留（核31→9）；adaptive→保留；black_th二次阈值→废弃（细线瓶颈）；
   close5→保留（桥接断口，改用1×5/5×1各向异性）；open5/open3→废弃（磨细线）；
   CC面积/高度过滤→废弃（删细线CC），改笔画宽判据。
@@ -32,10 +32,6 @@ except Exception:
 from camera_config import load as _load_camera
 
 _CAM = _load_camera()
-
-
-def clamp(v, lo, hi):
-    return max(lo, min(hi, v))
 
 
 # 固定工作分辨率（参数标定基准，与YOLO方案A一致）
@@ -76,7 +72,6 @@ class ShapeDetector:
             "topk": 4,               # 每族取前K条线组合
             "lsd_min_len": 10,       # LSD线段最短长度（LSD补HoughLinesP短边盲区）
             "corner_gap": 15,        # 角点通道：交点到线段近端端点容差（远卡断口碎片差12px，10误杀）
-            "angle_gray": 5.0,       # 分族灰色带：与45°边界差<此值的线双族收录
             # 几何闸门
             "min_w": 30,             # 框最小宽（960×540，图卡56px@1.3m）
             "min_h": 12,             # 框最小高（56×14@1.3m）
@@ -104,7 +99,6 @@ class ShapeDetector:
             "inner_ratio": (0.02, 0.8),  # warp后中心区图形线占比（五角星5边实测0.72）
             "warp_size": 200,
             "warp_inset": 0.14,      # warp向内收缩比例（外框环不进warp）
-            "refine_band": 8,        # quad逐边精调搜索带宽px
             "track_iou": 0.5,        # 帧间续锁IoU
             # CNN 分类（路线B分类器）
             "cnn_enable": os.environ.get("SHAPE_CNN_ENABLE", "1") != "0",
@@ -956,11 +950,10 @@ class ShapeDetector:
         shape = self._classify_shape_once(warp)
         if shape is not None:
             return shape
-        trim = self.cfg.get("edge_trim", 0.06)
-        if trim <= 0 or not self._touches_edge(warp):
+        if not self._touches_edge(warp):
             return None
-        # 十字臂与外框粘连成"田"字 → 裁掉边缘 N% 切断粘连
-        m = int(warp.shape[0] * trim)
+        # 十字臂与外框粘连成"田"字 → 裁掉边缘 6% 切断粘连
+        m = int(warp.shape[0] * 0.06)
         w2 = warp.copy()
         w2[:m, :] = 0
         w2[-m:, :] = 0

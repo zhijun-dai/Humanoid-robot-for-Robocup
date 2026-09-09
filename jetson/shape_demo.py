@@ -25,6 +25,7 @@ if _SCRIPT_DIR not in sys.path:
 
 from shape_detector import ShapeDetector
 from shape_preprocess import preprocess_for_yolo
+from utils import open_camera, imread_unicode
 
 # 动作映射（与规则一致）
 ACTION_NAMES = {
@@ -79,11 +80,6 @@ def put_text(img, text, org, color_bgr=(0, 0, 255), size=26):
                              fill=tuple(reversed(color_bgr)))
     img[:] = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
     return img
-
-
-def load_image(path):
-    data = np.fromfile(path, dtype=np.uint8)
-    return cv2.imdecode(data, cv2.IMREAD_COLOR)
 
 
 def run_cv(img, detector):
@@ -265,20 +261,9 @@ def main():
         put_text(disp, info, (10, 46), (200, 200, 0), 22)
         return disp, final, (cnn_s, rules_s, hu_b, hu_d), cv_dbg
 
-    # ── 摄像头实时模式（默认 CNN）──
+    # ── 摄像头实时模式 ──
     if args.camera:
-        import sys as _sys
-        # Windows 用默认后端(MSMF)——DSHOW 按索引打开不可靠；
-        # Linux(Jetson) 用 V4L2
-        if _sys.platform == "win32":
-            cap = cv2.VideoCapture(args.cam)
-            if not cap.isOpened():
-                cap.release()
-                cap = cv2.VideoCapture(args.cam, cv2.CAP_DSHOW)
-        else:
-            cap = cv2.VideoCapture(args.cam, cv2.CAP_V4L2)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap = open_camera(args.cam, 1280, 720)
         if not cap.isOpened():
             print(f"无法打开摄像头 {args.cam}")
             avail = []
@@ -331,7 +316,7 @@ def main():
 
     # ── 照片模式 ──
     elif args.image:
-        img = load_image(args.image)
+        img = imread_unicode(args.image)
         if img is None:
             print(f"无法读取 {args.image}")
             return

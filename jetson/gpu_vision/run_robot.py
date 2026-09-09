@@ -11,7 +11,7 @@
     python run_robot.py --video dump.mp4    # 视频回放调试
 """
 
-import math, os, sys, time, struct, glob, argparse
+import math, os, sys, time, glob, argparse
 import numpy as np
 import cv2
 
@@ -54,7 +54,6 @@ CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",  str(_CAM["vfov_deg"])))
 
 # ── 机器人步态参数 (机器人侧标定, 与测试车不同) ──
 STEP_LEN_CM    = float(os.environ.get("STEP_LEN_CM",      "10.0"))  # 一步前进距离 cm
-STEP_TIME_S    = float(os.environ.get("STEP_TIME_S",      "0.4"))   # 一步时长 s (日志/未来用)
 PREVIEW_GAIN   = float(os.environ.get("PREVIEW_GAIN",     "1.0"))   # 一步前瞻增益
 DEADBAND_CM    = float(os.environ.get("ROUTE_DEADBAND_CM",  "1.5")) # |err|<=此值 → GO
 LEFT_THRESH_CM = float(os.environ.get("ROUTE_LEFT_THRESH_CM", "2.0")) # err<负此值 → LEFT, 否则 SLIGHT_LEFT

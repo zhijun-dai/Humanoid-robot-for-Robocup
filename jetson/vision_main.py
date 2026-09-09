@@ -1,4 +1,4 @@
-"""Jetson Nano 视觉 Demo — 巡线 + 红条 + 图卡 实时可视化
+"""Jetson Nano 视觉 Demo — 巡线 + 红条 + 窄门 实时可视化
 双击 run_vision_demo.bat 运行。ESC 退出。
 """
 import cv2
@@ -10,6 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from line_detector_v1_warp import LineDetector
 from camera_config import load as _load_camera
+from utils import open_camera, show_debug_windows
 
 _CAM = _load_camera()
 
@@ -21,16 +22,7 @@ CAM_H = int(_CAM["height"])
 
 def main():
     print(f"Opening camera [{CAM_IDX}] ({CAM_W}x{CAM_H})...")
-    # Windows 默认后端(MSMF)，失败回退 DSHOW；Linux 用 V4L2
-    if sys.platform == "win32":
-        cap = cv2.VideoCapture(CAM_IDX)
-        if not cap.isOpened():
-            cap.release()
-            cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
-    else:
-        cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_V4L2)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
+    cap = open_camera(CAM_IDX, CAM_W, CAM_H)
     if not cap.isOpened():
         print(f"无法打开摄像头 {CAM_IDX}（试 --cam 0 或 --cam 1）")
         return
@@ -45,7 +37,7 @@ def main():
                       cam_vfov_deg=_CAM["vfov_deg"])
 
     print(f"Jetson Vision Demo  ({actual_w}x{actual_h})")
-    print("  巡线 + 红条 + 图卡 (几何形状)")
+    print("  巡线 + 红条 + 窄门")
     print("  Press ESC to quit\n")
 
     fps_t0 = time.time()
@@ -67,7 +59,6 @@ def main():
         # ── 巡线 ──
         dev_px, heading_deg, conf, vis_bird, dbg = ld.process(frame)
         vs = dbg.get("vision_speed_cm_s", 0.0)
-        os = dbg.get("vision_omega_rad_s", 0.0)
         status_line = f"FPS={fps_val:.0f}  v={vs:.1f}cm/s"
         if dbg.get("red_bar_detected"):
             status_line += f"  RED! z={dbg.get('red_bar_z_cm',0):.0f}cm"
@@ -129,14 +120,7 @@ def main():
         cv2.imshow("1.Original", frame)
 
         # 中间结果窗口
-        if "bird" in dbg and dbg["bird"] is not None:
-            bird_bgr = cv2.cvtColor(dbg["bird"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_bgr, (320, 400), interpolation=cv2.INTER_NEAREST))
-        if "binary_raw" in dbg and dbg["binary_raw"] is not None:
-            b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("3.Adaptive (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
-        if vis_bird is not None:
-            cv2.imshow("4.Close+Fit", cv2.resize(vis_bird, (320, 400), interpolation=cv2.INTER_NEAREST))
+        show_debug_windows(dbg, vis_bird)
 
         key = cv2.waitKey(1) & 0xFF
         if key == 27:

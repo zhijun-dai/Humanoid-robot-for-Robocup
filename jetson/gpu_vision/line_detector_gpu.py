@@ -21,18 +21,12 @@ import cv2
 import numpy as np
 
 import backend
+from utils import clamp
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Utility functions (same as V0)
+# Utility functions
 # ═══════════════════════════════════════════════════════════════════════
-
-def clamp(v, lo, hi):
-    if v < lo:
-        return lo
-    if v > hi:
-        return hi
-    return v
 
 
 def median(vals):
@@ -115,13 +109,11 @@ class LineDetector:
         self.th_min = 25
         self.th_max = 80
         self.dark_margin = 24
-        self.track_color_mode = "auto"
 
         # ── ROI general params ──
         self.min_track_width = 24
         self.max_track_width = 300    # narrow bands, max plausible width
         self.min_pair_ratio = 0.35    # easier pair matching in tight band
-        self.min_valid_lines = 2
         self.width_std_max = 20       # tighter band → lower width variance
         self.conf_min = 0.12
         self.min_line_width = 4
@@ -132,7 +124,6 @@ class LineDetector:
         self.min_pair_lines = 2
 
         # ── Narrow gate detection ──
-        self.narrow_gate_enter_ratio = 0.85
         self.narrow_gate_exit_ratio = 1.15
         self.narrow_red_close_z_cm = 35.0    # red bar z < this → exiting
         self.narrow_line_close_z_cm = 50.0   # start line z < this → exiting
@@ -143,7 +134,6 @@ class LineDetector:
         self.bottom_rows = 5
         self.bottom_step = 2
         self.single_line_conf = 0.30
-        self.assist_enable = False
 
         # ── Two-band direction detection (lower 2 of 8 layers: 300-349, 350-399) ──
         self.two_band_mode = True
@@ -171,10 +161,12 @@ class LineDetector:
         self.red_s_min = 70
         self.red_v_min = 40
         self.red_min_pixels = 50
+        self.red_bar_aspect_min = 1.5
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
         self.red_bar_confirm_frames = 4
+        self.red_bar_release_frames = 4
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
@@ -185,21 +177,16 @@ class LineDetector:
         self.bottom_lock_sym_tol_px = 24.0
         self.bottom_lock_blend = 0.72  # stronger lock anchor, less band-scan bias in curves
         self.bottom_lock_conf_penalty = 0.45
-        self.bottom_lock_speed_penalty = 0.25
         self.lock_reacquire_reset = True
 
         # ── Startup ──
         self.startup_settle_frames = 25
-        self.startup_speed_scale = 0.55
         self.startup_conf_min_scale = 0.70
         self.startup_min_weight_scale = 0.70
         self.startup_force_simple_bottom = True
-        self.startup_lost_bias_free = True
 
         # ── Fusion params ──
         self.smooth_alpha = 0.72         # narrower bands → more noise → more smoothing
-        self.curve_gain = 0.18
-        self.angle_gain = 0.15
         self.min_weight = 0.10
 
         # ── Pixel domain gains（窄带适配：50px band separation, less lookahead）──
@@ -219,10 +206,6 @@ class LineDetector:
         self.robust_decay_frames = 8
 
         # ── Internal state ──
-        self.optical_flow_enable = False  # disable by default
-        self._prev_gray = None       # optical flow frame buffer
-        self._speed_smooth = 0.0     # EMA smoothed visual speed (cm/s)
-        self._omega_smooth = 0.0     # EMA smoothed visual omega (rad/s)
         self._state = {
             "smoothed_err": 0.0,
             "lost_frames": 0,
@@ -231,7 +214,6 @@ class LineDetector:
             "last_far_dist": 0.0,
             "last_lane_center_x": float(self.center_x),
             "last_lane_width_px": float(self.lane_width_init_px),
-            "track_dark_score": 0,
             "last_band_mask": 0,
             "startup_frames": 0,
             "last_bottom_lock_valid": False,
@@ -239,11 +221,14 @@ class LineDetector:
             "shake_active_frames": 0,
             "diff_rms_px": 0.0,
             "red_bar_count": 0,
-            "narrow_gate_recent": 0,
+            "red_bar_miss": 0,
+            "red_bar_cx": 0.0,
+            "red_bar_cy": 0.0,
+            "red_bar_z_cm": 0.0,
         }
 
     # ═══════════════════════════════════════════════════════════
-    # Birdseye matrix (same as V2/V3: line_detector.py lines 87-133)
+    # Birdseye matrix (IPM: pinhole back-projection of ground plane)
     # ═══════════════════════════════════════════════════════════
 
     def _build_birdseye_matrix(self, lookahead):
@@ -360,50 +345,6 @@ class LineDetector:
         return best_t
 
     # ═══════════════════════════════════════════════════════════
-    # Track color detection
-    # ═══════════════════════════════════════════════════════════
-
-    def _detect_track_is_dark(self, gray, black_th):
-        if self.track_color_mode == "dark":
-            return True
-        if self.track_color_mode == "light":
-            return False
-
-        h, w = gray.shape
-        dark = 0
-        light = 0
-        step_y = max(1, h // 20)
-        step_x = max(1, w // 20)
-
-        for y in range(0, h, step_y):
-            for x in range(0, w, step_x):
-                g = int(gray[y, x])
-                if g <= black_th:
-                    dark += 1
-                else:
-                    light += 1
-
-        return dark <= light
-
-    # ═══════════════════════════════════════════════════════════
-    # Pixel classification
-    # ═══════════════════════════════════════════════════════════
-
-    def _pixel_is_track(self, g, black_th, track_is_dark):
-        if track_is_dark:
-            return g <= max(0, black_th - self.dark_margin)
-        return g >= min(255, black_th + self.dark_margin)
-
-    def _pixel_is_red(self, bgr, x, y):
-        if not self.red_detect_enable:
-            return False
-        px = bgr[y:y + 1, x:x + 1]
-        hh, ss, vv = cv2.cvtColor(px, cv2.COLOR_BGR2HSV)[0, 0]
-        hh, ss, vv = int(hh), int(ss), int(vv)
-        return ((hh <= self.red_h_max or hh >= self.red_h_min)
-                and ss >= self.red_s_min and vv >= self.red_v_min)
-
-    # ═══════════════════════════════════════════════════════════
     # Obstacle detection
     # ═══════════════════════════════════════════════════════════
 
@@ -470,22 +411,43 @@ class LineDetector:
 
         Returns (cx, v_foot, z_cm) or None:
           cx     - horizontal centroid (px, original image)
-          v_foot - lowest red row (bar near edge)
+          v_foot - lowest red row of the largest bar-shaped blob
           z_cm   - exact ground distance of v_foot via pinhole back-projection
+
+        Picks the largest bar-shaped connected component (not every red pixel):
+        a stray red speck near the image bottom would otherwise pin v_foot to
+        the last row and report the bar as always ~12cm away.
         """
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        hh = hsv[:, :, 0].astype(np.int32)
-        ss = hsv[:, :, 1].astype(np.int32)
-        vv = hsv[:, :, 2].astype(np.int32)
-        is_red = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
-                  & (ss >= self.red_s_min) & (vv >= self.red_v_min))
+        hh = hsv[:, :, 0]
+        ss = hsv[:, :, 1]
+        vv = hsv[:, :, 2]
+        mask = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
+                & (ss >= self.red_s_min) & (vv >= self.red_v_min)).astype(np.uint8)
 
-        if np.count_nonzero(is_red) < self.red_min_pixels:
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        best, best_area, best_bottom = -1, 0, -1
+        for i in range(1, n):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if area < self.red_min_pixels:
+                continue
+            w = int(stats[i, cv2.CC_STAT_WIDTH])
+            h = int(stats[i, cv2.CC_STAT_HEIGHT])
+            if w < self.red_bar_aspect_min * h:
+                continue
+            bottom = int(stats[i, cv2.CC_STAT_TOP]) + h
+            if area > best_area or (area == best_area and bottom > best_bottom):
+                best, best_area, best_bottom = i, area, bottom
+        if best < 0:
             return None
 
-        ys, xs = np.where(is_red)
-        cx = float(np.mean(xs))
-        v_foot = float(np.max(ys))  # lowest row = bar near edge
+        x0 = int(stats[best, cv2.CC_STAT_LEFT])
+        y0 = int(stats[best, cv2.CC_STAT_TOP])
+        w0 = int(stats[best, cv2.CC_STAT_WIDTH])
+        h0 = int(stats[best, cv2.CC_STAT_HEIGHT])
+        ys, xs = np.where(labels[y0:y0 + h0, x0:x0 + w0] == best)
+        cx = float(x0 + np.mean(xs))
+        v_foot = float(y0 + np.max(ys))  # lowest row = bar near edge
         a = (v_foot - self.cy_px) / self.fy_px
         z_cm = self.cam_height * (np.cos(self.cam_pitch) - a * np.sin(self.cam_pitch)) \
             / (a * np.cos(self.cam_pitch) + np.sin(self.cam_pitch))
@@ -736,20 +698,6 @@ class LineDetector:
         if base is None:
             return None
 
-        if self.assist_enable:
-            assist = self._scan_band_midline(
-                gray, bgr, black_th, track_is_dark,
-                base["center_px"], base["lane_width_px"],
-                self.assist_start_ratio, self.assist_end_ratio,
-                self.assist_rows, self.assist_step,
-            )
-            if assist is not None:
-                base["assist_center_px"] = assist["center_px"]
-                base["assist_center_cm"] = assist["center_cm"]
-                base["assist_dist_cm"] = assist["dist_cm"]
-                base["assist_angle_deg"] = assist["angle"]
-                base["assist_conf"] = assist["conf"]
-
         return base
 
     # ═══════════════════════════════════════════════════════════
@@ -965,17 +913,6 @@ class LineDetector:
 
         # ── Step 3: Track color detection ──
         # After black-hat, lines are always bright → track_is_dark=False
-        # Original _detect_track_is_dark call preserved for non-black-hat mode:
-        # track_dark_candidate = self._detect_track_is_dark(gray, black_th)
-        # if track_dark_candidate:
-        #     state["track_dark_score"] = int(
-        #         clamp(state["track_dark_score"] + 1, -6, 6)
-        #     )
-        # else:
-        #     state["track_dark_score"] = int(
-        #         clamp(state["track_dark_score"] - 1, -6, 6)
-        #     )
-        # track_is_dark = state["track_dark_score"] >= 0
         track_is_dark = False
 
         # ── Startup transient params ──
@@ -1071,17 +1008,25 @@ class LineDetector:
                 roi_results = []
 
         # ── Red bar detection ──
-        red_bar_cx, red_bar_cy = 0.0, 0.0
-        red_bar_x_cm, red_bar_z_cm = 0.0, 0.0
         if self.red_detect_enable:
             res = self._detect_red_bar(bgr)
             if res is not None:
-                red_bar_cx, red_bar_cy, red_bar_z_cm = res
-                red_bar_x_cm = (red_bar_cx - self.cx_px) / self.fx_px * red_bar_z_cm
+                state["red_bar_cx"], state["red_bar_cy"], state["red_bar_z_cm"] = res
                 state["red_bar_count"] = min(state["red_bar_count"] + 1, self.red_bar_confirm_frames + 1)
+                state["red_bar_miss"] = 0
             else:
-                state["red_bar_count"] = max(state["red_bar_count"] - 1, 0)
+                state["red_bar_miss"] += 1
+                if state["red_bar_miss"] >= self.red_bar_release_frames:
+                    state["red_bar_count"] = 0
         red_bar_detected = state["red_bar_count"] >= self.red_bar_confirm_frames
+        # While confirmed, hold the last valid position through single-frame dropouts
+        red_bar_cx, red_bar_cy, red_bar_z_cm = 0.0, 0.0, 0.0
+        red_bar_x_cm = 0.0
+        if red_bar_detected:
+            red_bar_cx = state["red_bar_cx"]
+            red_bar_cy = state["red_bar_cy"]
+            red_bar_z_cm = state["red_bar_z_cm"]
+            red_bar_x_cm = (red_bar_cx - self.cx_px) / self.fx_px * red_bar_z_cm
 
         # Defaults for lost-frame path
         ng_exit_z = 0.0
@@ -1444,34 +1389,8 @@ class LineDetector:
             "curve_mode": curve_mode,
         }
 
-        # ── Optical flow speed estimation (on raw gray birdseye) ──
-        if self.optical_flow_enable and self._prev_gray is not None:
-            # Farneback dense flow: bottom 150 rows only
-            flow = cv2.calcOpticalFlowFarneback(
-                self._prev_gray, gray, None,
-                0.5, 2, 15, 1, 5, 1.1, 0)  # pyr_scale, levels, winsize, iters, poly_n, sigma, flags
-            roi_vy = flow[250:400, :, 1]       # vertical flow (forward)
-            v_fwd_px = float(np.median(roi_vy))  # median pixels/frame
-
-            # Forward speed: px/frame × cm/px × fps → cm/s
-            # z_per_px for y direction (vertical cm per pixel in birdseye)
-            v_raw = v_fwd_px * self.z_per_px * 30.0  # nominal 30fps
-            self._speed_smooth = 0.7 * self._speed_smooth + 0.3 * v_raw
-
-            # Angular speed: linear fit vx vs z_cm in bottom 150 rows
-            roi_vx = flow[250:400, :, 0]       # horizontal flow
-            vx_per_row = np.median(roi_vx, axis=1)
-            z_arr = self.z_per_px * np.arange(149.0, -1.0, -1.0)  # z_cm per row
-            mask = ~np.isnan(vx_per_row)
-            if mask.sum() >= 3:
-                slope, _ = np.polyfit(z_arr[mask], vx_per_row[mask], 1)
-                omega_px = -slope          # px/frame per cm
-                omega_raw = omega_px * 30.0 * self.z_per_px  # approximate rad/s
-                self._omega_smooth = 0.7 * self._omega_smooth + 0.3 * omega_raw
-        self._prev_gray = gray.copy()
-
-        debug["vision_speed_cm_s"] = self._speed_smooth
-        debug["vision_omega_rad_s"] = self._omega_smooth
+        debug["vision_speed_cm_s"] = 0.0
+        debug["vision_omega_rad_s"] = 0.0
 
         return dev_px, heading_deg, conf, vis, debug
 

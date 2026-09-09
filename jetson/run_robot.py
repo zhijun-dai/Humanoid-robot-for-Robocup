@@ -11,28 +11,19 @@
 机器人步长与测试车不同, 用 env 覆盖 (STEP_LEN_CM 等, 机器人侧标定)。
 """
 
-import math, os, sys, time, struct
+import math, os, sys, time
 import numpy as np
 import cv2
 
-# ── Path to V1 detector ──
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
-_V1_DIR = os.path.join(_SCRIPT_DIR, "v1_production")
-if _V1_DIR not in sys.path:
-    sys.path.insert(0, _V1_DIR)
 
 from line_detector_v1_warp import LineDetector
 from shape_detector import ShapeDetector
 from protocol_v2 import (VisionProtocolV2, StreamParser, MSG_ROBOT_STATE,
-                         MSG_LINE_CTRL, MSG_HEARTBEAT)
-
-
-def clamp(v, lo, hi):
-    if v < lo: return lo
-    if v > hi: return hi
-    return v
+                         MSG_ACK, quantize_to_step)
+from utils import clamp, open_camera, show_debug_windows
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -54,7 +45,6 @@ CAM_VFOV_DEG   = float(os.environ.get("CAM_VFOV_DEG",  str(_CAM["vfov_deg"])))
 
 # ── 机器人步态参数 (机器人侧标定, 与测试车不同) ──
 STEP_LEN_CM    = float(os.environ.get("STEP_LEN_CM",      "10.0"))  # 一步前进距离 cm
-STEP_TIME_S    = float(os.environ.get("STEP_TIME_S",      "0.4"))   # 一步时长 s (日志/未来用)
 PREVIEW_GAIN   = float(os.environ.get("PREVIEW_GAIN",     "1.0"))   # 一步前瞻增益
 DEADBAND_CM    = float(os.environ.get("ROUTE_DEADBAND_CM",  "1.5")) # |err|<=此值 → GO
 LEFT_THRESH_CM = float(os.environ.get("ROUTE_LEFT_THRESH_CM", "2.0")) # err<负此值 → LEFT, 否则 SLIGHT_LEFT
@@ -123,7 +113,7 @@ def _serial_read(parser):
             for fr in parser.feed(chunk):
                 if fr.msg_type == MSG_ROBOT_STATE:
                     print(f"[rx] ROBOT_STATE seq={fr.seq} payload={fr.payload.hex()}")
-                elif fr.msg_type == 0x80:
+                elif fr.msg_type == MSG_ACK:
                     print(f"[rx] ACK seq={fr.seq} payload={fr.payload.hex()}")
     except Exception:
         pass
@@ -144,27 +134,12 @@ def steer_to_route(steer_cm):
     return 4
 
 
-def quantize(v, step):
-    if step <= 1:
-        return int(v)
-    return int(round(float(v) / float(step)) * float(step))
-
-
 def main():
     # ── Camera ──
-    cap = cv2.VideoCapture(CAM_IDX, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  CAM_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
-
+    cap = open_camera(CAM_IDX, CAM_W, CAM_H)
     if not cap.isOpened():
         print(f"[ERROR] Cannot open camera index {CAM_IDX}")
         sys.exit(1)
-
-    for _ in range(3):
-        ok, _ = cap.read()
-        if ok:
-            break
-        time.sleep(0.05)
 
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -277,10 +252,10 @@ def main():
         # ── 量化 → LINE_CTRL ──
         route_u8 = steer_to_route(steer)
         mode_u8 = MODE_LOST_SEARCH if lost > 0 else MODE_LINE_FOLLOW
-        conf_u8 = clamp(quantize(conf * 100.0, 5), 0, 100)
+        conf_u8 = clamp(quantize_to_step(conf * 100.0, 5), 0, 100)
         lost_u8 = 1 if lost > 0 else 0
-        ex_mm = quantize(round(steer * 10.0), 10)          # 预测步末横向偏差 mm
-        ang_cdeg = quantize(round(angle_err * 100.0), 100) # 航向误差 cdeg
+        ex_mm = quantize_to_step(round(steer * 10.0), 10)          # 预测步末横向偏差 mm
+        ang_cdeg = quantize_to_step(round(angle_err * 100.0), 100) # 航向误差 cdeg
 
         n_ms = int(t * 1000)
         if n_ms - last_ctrl_t >= 1000.0 / CTRL_HZ:
@@ -310,14 +285,7 @@ def main():
         cv2.putText(frame_disp, "Q=quit", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 2)
         cv2.imshow("1.Original", frame_disp)
 
-        if "bird" in dbg and dbg["bird"] is not None:
-            bird_bgr = cv2.cvtColor(dbg["bird"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("2.Warp (birdseye)", cv2.resize(bird_bgr, (320, 400), interpolation=cv2.INTER_NEAREST))
-        if "binary_raw" in dbg and dbg["binary_raw"] is not None:
-            b_raw = cv2.cvtColor(dbg["binary_raw"], cv2.COLOR_GRAY2BGR)
-            cv2.imshow("3.Adaptive (binary)", cv2.resize(b_raw, (320, 400), interpolation=cv2.INTER_NEAREST))
-        if _vis is not None:
-            cv2.imshow("4.Close+Fit", cv2.resize(_vis, (320, 400), interpolation=cv2.INTER_NEAREST))
+        show_debug_windows(dbg, _vis)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
