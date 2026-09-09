@@ -82,18 +82,23 @@ def main():
     parser.add_argument("--video", type=str, default=None, help="视频路径")
     parser.add_argument("--yolo", action="store_true",
                         help="启用YOLO方案（需ultralytics+权重）")
-    parser.add_argument("--method", choices=("cv", "cnn", "both"), default="both",
-                        help="分类路径: cv=纯CV规则 / cnn=神经网络 / both=两路都算(默认)")
+    parser.add_argument("--method", choices=("cv", "cnn", "both"), default=None,
+                        help="分类路径: cv=纯CV规则(摄像头模式默认) / cnn=神经网络 / both=两路都算")
+    parser.add_argument("--camera", action="store_true",
+                        help="摄像头实时识别（默认纯CV模式）")
+    parser.add_argument("--cam", type=int, default=0, help="摄像头索引")
     parser.add_argument("--preprocess", action="store_true",
                         help="YOLO前先做传统CV预处理（灰度/CLAHE/Otsu/形态学）")
     parser.add_argument("--save-pre", type=str, default=None,
                         help="保存预处理中间图到指定路径（调试用）")
     args = parser.parse_args()
 
+    # 摄像头模式默认纯 CV，其余默认两路对比
+    method = args.method or ("cv" if args.camera else "both")
     # 分类路径: cv→rules, cnn→cnn, both→auto+两路都算
     mode_map = {"cv": ("rules", False), "cnn": ("cnn", False),
                 "both": ("auto", True)}
-    cm, cb = mode_map[args.method]
+    cm, cb = mode_map[method]
     detector = ShapeDetector(stable_frames=1, cooldown_ms=0, debug=False,
                              roi_ratio=1.0, classify_mode=cm, compare_both=cb)
 
@@ -147,9 +152,15 @@ def main():
             x1, y1, x2, y2 = [int(v) for v in yo_box]
             cv2.rectangle(disp, (x1, y1), (x2, y2), (255, 0, 0), 3)
 
+        hu_d = cv_dbg.get("hu_dist")
         if final is not None:
             src, shape, action, conf = final
-            label = f"{SHAPE_NAMES.get(shape, shape)} 动作{action} {ACTION_NAMES[action]} ({src} conf={conf:.2f})"
+            if detector.classify_mode == "rules" and hu_d is not None:
+                conf_s = f"Hu距离 {hu_d:.3f}"   # 纯CV无概率，用模板距离
+            else:
+                conf_s = f"置信度 {conf:.2f}"
+            label = (f"{SHAPE_NAMES.get(shape, shape)} 动作{action} "
+                     f"{ACTION_NAMES[action]} | {conf_s}")
         else:
             label = "未识别"
         cv2.putText(disp, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
@@ -167,8 +178,36 @@ def main():
                     0.6, (200, 200, 0), 2)
         return disp, final, (cnn_s, rules_s, hu_b, hu_d)
 
+    # ── 摄像头实时模式（默认纯 CV）──
+    if args.camera:
+        import sys as _sys
+        api = cv2.CAP_DSHOW if _sys.platform == "win32" else cv2.CAP_V4L2
+        cap = cv2.VideoCapture(args.cam, api)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        if not cap.isOpened():
+            print(f"无法打开摄像头 {args.cam}")
+            return
+        mode_name = {"rules": "纯CV", "cnn": "CNN", "auto": "两路对比"}[cm]
+        print(f"=== 摄像头 {args.cam} 实时识别（{mode_name}）===")
+        print("Q/ESC 退出")
+        frame_idx = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                print("[WARN] 读帧失败")
+                break
+            disp, final, paths = process_frame(frame, frame_idx)
+            cv2.imshow("Shape Detect", disp)
+            frame_idx += 1
+            if cv2.waitKey(1) & 0xFF in (27, ord("q")):
+                break
+        cap.release()
+        cv2.destroyAllWindows()
+        print(f"  共处理 {frame_idx} 帧")
+
     # ── 照片模式 ──
-    if args.image:
+    elif args.image:
         img = load_image(args.image)
         if img is None:
             print(f"无法读取 {args.image}")
