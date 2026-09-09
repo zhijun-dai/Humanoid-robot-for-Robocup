@@ -156,13 +156,17 @@ class LineDetector:
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
         self.cross_black_cover_ratio = 0.20
         self.red_detect_enable = True
-        self.red_min_r = 105        # 原值（实测红条颜色可达标；调高会漏检）
-        self.red_dom_margin = 28    # 原值
-        self.red_min_pixels = 50    # 原值
+        # HSV 判红：黑白地板上唯一带色调的物体，只看 Hue+饱和度，
+        # 不管明暗（暗红/亮红都能检出；灰色地板 S≈0 被排除）
+        self.red_h_max = 15         # 红色 Hue 上限（H≤15 含橙红）
+        self.red_h_min = 165        # 红色 Hue 下限（跨 180 边界）
+        self.red_s_min = 70         # 饱和度下限（灰色地板 S≈0）
+        self.red_v_min = 40         # 亮度下限（纯黑排除）
+        self.red_min_pixels = 50    # 红像素面积下限（滤噪点）
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_confirm_frames = 4   # 连续确认帧数（原3，去抖）
+        self.red_bar_confirm_frames = 4   # 连续确认帧数（去抖）
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
@@ -457,10 +461,12 @@ class LineDetector:
           v_foot - lowest red row (bar near edge)
           z_cm   - exact ground distance of v_foot via pinhole back-projection
         """
-        rb = bgr[:, :, 0].astype(np.int32)
-        rg = bgr[:, :, 1].astype(np.int32)
-        rr = bgr[:, :, 2].astype(np.int32)
-        is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        hh = hsv[:, :, 0].astype(np.int32)
+        ss = hsv[:, :, 1].astype(np.int32)
+        vv = hsv[:, :, 2].astype(np.int32)
+        is_red = (((hh <= self.red_h_max) | (hh >= self.red_h_min))
+                  & (ss >= self.red_s_min) & (vv >= self.red_v_min))
 
         if np.count_nonzero(is_red) < self.red_min_pixels:
             return None

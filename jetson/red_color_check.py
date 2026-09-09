@@ -25,8 +25,8 @@ ap.add_argument("--cam", type=int, default=1, help="摄像头索引")
 args = ap.parse_args()
 
 ld = LineDetector()
-print(f"判红阈值: R≥{ld.red_min_r} 且 R>G+{ld.red_dom_margin} 且 "
-      f"R>B+{ld.red_dom_margin}，红像素需 ≥{ld.red_min_pixels}")
+print(f"判红阈值(HSV): H≤{ld.red_h_max} 或 ≥{ld.red_h_min}, "
+      f"S≥{ld.red_s_min}, V≥{ld.red_v_min}，红像素需 ≥{ld.red_min_pixels}")
 print("Q/ESC 退出\n")
 
 cap = cv2.VideoCapture(args.cam)
@@ -43,8 +43,12 @@ while True:
     r = frame[:, :, 2].astype(np.int32)
     score = r - np.maximum(g, b)
     i = np.unravel_index(int(np.argmax(score)), score.shape)
-    mask = ((r >= ld.red_min_r) & (r > g + ld.red_dom_margin)
-            & (r > b + ld.red_dom_margin))
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    hh = hsv[:, :, 0].astype(np.int32)
+    ss = hsv[:, :, 1].astype(np.int32)
+    vv = hsv[:, :, 2].astype(np.int32)
+    mask = (((hh <= ld.red_h_max) | (hh >= ld.red_h_min))
+            & (ss >= ld.red_s_min) & (vv >= ld.red_v_min))
     n = int(mask.sum())
     res = ld._detect_red_bar(frame)
     z = f"{res[2]:.0f}cm" if res else "未检出"
