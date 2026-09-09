@@ -94,9 +94,10 @@ class ShapeDetector:
             "ang_max": 150,          # 原135/45误杀远桶透视压扁+旋转卡
             "edge_h_tol": 25.0,      # 边方向容差：至少2条边接近水平（±此角度）
             "edge_h_min": 2,         # 需满足的"接近水平"边数（图卡上下边；透视侧边放宽）
-            # 验证阈值（真框实测 ±1px 命中 0.85-1.00 → 阈值取 0.75/0.6）
-            "closure_total": 0.75,   # 4边采样命中率均值
-            "closure_edge": 0.60,    # 单边最低命中率
+            "edge_len_ratio_max": 2.2,  # 四边最长/最短比（45°俯角平放卡物理比值≈1.67）
+            # 验证阈值（边必须几乎全在线上）
+            "closure_total": 0.95,   # 4边采样命中率均值
+            "closure_edge": 0.95,    # 单边最低命中率
             "sample_band": 1,        # 采样带半宽px（真框边几乎全在线上）
             "n_samples": 16,         # 每边采样点数
             "max_gap_frac": 0.25,    # 单边最长连续断口占总采样点比例上限
@@ -772,6 +773,10 @@ class ShapeDetector:
             if min(a, abs(a - 180.0)) <= c["edge_h_tol"]:
                 n_h += 1
         if n_h < c["edge_h_min"]:
+            return False
+        # 四边长度一致性：图卡近正方形，透视下最长/最短边比 ≤1.2
+        lens = [float(np.linalg.norm(q[(i + 1) % 4] - q[i])) for i in range(4)]
+        if max(lens) / max(min(lens), 1e-6) > c["edge_len_ratio_max"]:
             return False
         return True
 
