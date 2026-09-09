@@ -156,12 +156,13 @@ class LineDetector:
         self.cross_black_run_ratio = 0.25  # 鸟瞰图横线窄, 降低门槛
         self.cross_black_cover_ratio = 0.20
         self.red_detect_enable = True
-        self.red_min_r = 105
-        self.red_dom_margin = 28
+        self.red_min_r = 130        # 提高：要求更饱和的红（原105易误检暖色物体）
+        self.red_dom_margin = 45    # 提高：R 需明显高于 G/B（原28）
+        self.red_min_pixels = 200   # 红像素面积下限（原50，噪声也能满足）
         self.red_row_ratio = 0.35
 
         # ── Red bar detection ──
-        self.red_bar_confirm_frames = 3
+        self.red_bar_confirm_frames = 4   # 连续确认帧数（去抖）
 
         # ── Bottom lock ──
         self.bottom_lock_enable = True
@@ -461,7 +462,7 @@ class LineDetector:
         rr = bgr[:, :, 2].astype(np.int32)
         is_red = (rr >= self.red_min_r) & (rr > rg + self.red_dom_margin) & (rr > rb + self.red_dom_margin)
 
-        if np.count_nonzero(is_red) < 50:
+        if np.count_nonzero(is_red) < self.red_min_pixels:
             return None
 
         ys, xs = np.where(is_red)
