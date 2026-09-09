@@ -61,7 +61,7 @@ class ShapeDetector:
             # 线宽选择性预处理
             "bh_kernel": 9,          # 线宽选择性：只增强<核的细线（找框目标）
             "adaptive_block": 31,    # 自适应阈值窗口（与巡线一致）
-            "adaptive_c": -12,       # 阈值偏移
+            "adaptive_c": -16,       # 阈值偏移
             "stroke_min": 1.0,       # 笔画宽下限px（distanceTransform中位半径×2）
             "stroke_max": 7.0,       # 笔画宽上限px（拒巡线）
             # Hough候选
@@ -81,6 +81,8 @@ class ShapeDetector:
             "area_max": 20000,
             "ang_min": 40,           # quad内角范围（度）；远桶GT实测38.6-143.5°
             "ang_max": 150,          # 原135/45误杀远桶透视压扁+旋转卡
+            "edge_h_tol": 25.0,      # 边方向容差：至少2条边接近水平（±此角度）
+            "edge_h_min": 2,         # 需满足的"接近水平"边数（图卡上下边；透视侧边放宽）
             # 验证阈值
             "closure_total": 0.45,   # 4边采样命中率均值
             "closure_edge": 0.30,    # 单边最低命中率（竖边放宽）
@@ -685,7 +687,7 @@ class ShapeDetector:
         return refined
 
     def _geom_ok(self, quad):
-        """轻量几何预筛（纯数值，不采样）：面积/宽高/宽高比/内角。"""
+        """轻量几何预筛（纯数值，不采样）：面积/宽高/宽高比/内角/边方向。"""
         c = self.cfg
         q = quad.astype(np.float32)
         area = cv2.contourArea(q)
@@ -707,6 +709,17 @@ class ShapeDetector:
             ang = np.degrees(np.arccos(np.clip(cos, -1, 1)))
             if not (c["ang_min"] <= ang <= c["ang_max"]):
                 return False
+        # 边方向：至少 N 条边接近水平（图卡平放地面时上下边近水平；
+        # 阴影/干扰形成的歪斜四边形通常无水平边）
+        n_h = 0
+        for i in range(4):
+            p1, p2 = q[i], q[(i + 1) % 4]
+            a = abs(np.degrees(np.arctan2(p2[1] - p1[1],
+                                         p2[0] - p1[0]))) % 180.0
+            if min(a, abs(a - 180.0)) <= c["edge_h_tol"]:
+                n_h += 1
+        if n_h < c["edge_h_min"]:
+            return False
         return True
 
     def _verify_quad(self, binary, dt, quad):
