@@ -94,11 +94,12 @@ class ShapeDetector:
             "ang_max": 150,          # 原135/45误杀远桶透视压扁+旋转卡
             "edge_h_tol": 25.0,      # 边方向容差：至少2条边接近水平（±此角度）
             "edge_h_min": 2,         # 需满足的"接近水平"边数（图卡上下边；透视侧边放宽）
-            # 验证阈值
-            "closure_total": 0.45,   # 4边采样命中率均值
-            "closure_edge": 0.30,    # 单边最低命中率（竖边放宽）
-            "sample_band": 3,        # 采样带半宽px
-            "n_samples": 10,         # 每边采样点数
+            # 验证阈值（真框实测 ±1px 命中 0.85-1.00 → 阈值取 0.75/0.6）
+            "closure_total": 0.75,   # 4边采样命中率均值
+            "closure_edge": 0.60,    # 单边最低命中率
+            "sample_band": 1,        # 采样带半宽px（真框边几乎全在线上）
+            "n_samples": 16,         # 每边采样点数
+            "max_gap_frac": 0.25,    # 单边最长连续断口占总采样点比例上限
             "inner_ratio": (0.02, 0.8),  # warp后中心区图形线占比（五角星5边实测0.72）
             "warp_size": 200,
             "warp_inset": 0.14,      # warp向内收缩比例（外框环不进warp）
@@ -778,7 +779,7 @@ class ShapeDetector:
         c = self.cfg
         q = quad.astype(np.float32)
 
-        # 闭合度：边采样 ±band 带内命中
+        # 闭合度：边采样 ±band 带内命中 + 最长连续断口
         ns = c["n_samples"]
         band = c["sample_band"]
         hits_per_edge = []
@@ -787,6 +788,7 @@ class ShapeDetector:
             p1 = q[e]
             p2 = q[(e + 1) % 4]
             hits = 0
+            gap = best_gap = 0
             for k in range(1, ns):
                 t = k / ns
                 px = int(round(p1[0] + t * (p2[0] - p1[0])))
@@ -797,9 +799,16 @@ class ShapeDetector:
                 x1 = min(binary.shape[1], px + band + 1)
                 if np.any(binary[y0:y1, x0:x1] > 0):
                     hits += 1
+                    gap = 0
                     if (y0 < py < y1 and x0 < px < x1):
                         widths.append(dt[py, px])
+                else:
+                    gap += 1
+                    best_gap = max(best_gap, gap)
             hits_per_edge.append(hits / (ns - 1))
+            # 单边最长连续断口限制（真框实测 0-2/40，假框断口长）
+            if best_gap > c["max_gap_frac"] * (ns - 1):
+                return None
         closure = float(np.mean(hits_per_edge))
         if closure < c["closure_total"] or min(hits_per_edge) < c["closure_edge"]:
             return None
