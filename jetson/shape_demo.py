@@ -265,15 +265,35 @@ def main():
         put_text(disp, info, (10, 46), (200, 200, 0), 22)
         return disp, final, (cnn_s, rules_s, hu_b, hu_d), cv_dbg
 
-    # ── 摄像头实时模式（默认纯 CV）──
+    # ── 摄像头实时模式（默认 CNN）──
     if args.camera:
         import sys as _sys
-        api = cv2.CAP_DSHOW if _sys.platform == "win32" else cv2.CAP_V4L2
-        cap = cv2.VideoCapture(args.cam, api)
+        # Windows 用默认后端(MSMF)——DSHOW 按索引打开不可靠；
+        # Linux(Jetson) 用 V4L2
+        if _sys.platform == "win32":
+            cap = cv2.VideoCapture(args.cam)
+            if not cap.isOpened():
+                cap.release()
+                cap = cv2.VideoCapture(args.cam, cv2.CAP_DSHOW)
+        else:
+            cap = cv2.VideoCapture(args.cam, cv2.CAP_V4L2)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         if not cap.isOpened():
-            print(f"无法打开摄像头 {args.cam}（换个索引试 --cam 1）")
+            print(f"无法打开摄像头 {args.cam}")
+            avail = []
+            for i in range(4):
+                c = cv2.VideoCapture(i)
+                if c.isOpened():
+                    ok0, _ = c.read()
+                    if ok0:
+                        avail.append(i)
+                c.release()
+            if avail:
+                print(f"  当前可用索引: {avail}  → 用 --cam {avail[0]}")
+            else:
+                print("  未检测到可用摄像头（检查 USB 连接，"
+                      "或是否有其他程序占用）")
             return
         aw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         ah = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -283,11 +303,20 @@ def main():
             print("  提示：分辨率偏低，图卡拿近些更容易找到框")
         print("Q/ESC 退出，S 保存当前找框输入图+CNN输入图")
         frame_idx = 0
+        fails = 0
         while True:
             ok, frame = cap.read()
             if not ok:
-                print("[WARN] 读帧失败")
-                break
+                fails += 1
+                if fails == 5:
+                    print("[WARN] 读帧失败，重试中…")
+                if fails > 30:
+                    print("[WARN] 摄像头持续无响应，退出"
+                          "（可重插 USB 或换 --cam 索引）")
+                    break
+                time.sleep(0.02)
+                continue
+            fails = 0
             disp, final, paths, dbg = process_frame(frame, frame_idx)
             cv2.imshow("Find-box input (binary)", disp)
             frame_idx += 1
