@@ -43,7 +43,7 @@ class ShapeDetector:
         self,
         stable_frames=3,        # 连续确认帧数
         cooldown_ms=3200,       # 发送冷却
-        roi_ratio=1.0,          # 检测ROI：画面下roi_ratio区域（默认全图）
+        roi_ratio=0.5,          # 检测ROI：画面下roi_ratio区域（默认下半）
         debug=True,
         classify_mode="auto",   # auto=CNN主判规则兜底 / cnn=只CNN / rules=纯CV
         compare_both=False,     # True: 两条路径都算，结果放 dbg
@@ -160,19 +160,18 @@ class ShapeDetector:
         else:
             gray = bgr_or_gray
         h0, w0 = gray.shape[:2]
-        self._scale_x = w0 / WORK_W
-        self._scale_y = h0 / WORK_H
-
         if self.roi_ratio < 1.0:
-            h = gray.shape[0]
-            y0 = int(h * (1.0 - self.roi_ratio))
-            gray = gray[y0:, :]
-            self._roi_y0 = y0
+            self._roi_y0 = int(h0 * (1.0 - self.roi_ratio))
+            gray = gray[self._roi_y0:, :]
         else:
             self._roi_y0 = 0
+        h_roi = gray.shape[0]
+        # 缩放基准用 ROI 后的高度（quad 映射回原图时再加 _roi_y0）
+        self._scale_x = w0 / WORK_W
+        self._scale_y = h_roi / WORK_H
 
         # resize到固定工作分辨率（960×540）
-        if (w0, h0) != (WORK_W, WORK_H):
+        if gray.shape[:2] != (WORK_H, WORK_W):
             gray = cv2.resize(gray, (WORK_W, WORK_H))
 
         # S1 线宽选择性二值化（线=白255）
@@ -221,9 +220,10 @@ class ShapeDetector:
             warp = self._warp_card(binary, best)
             dbg["warp"] = warp
             shape = self._classify(warp, dbg)
-            # quad映射回原图分辨率（找框在960×540上做）
+            # quad映射回原图分辨率（找框在960×540上做，含 ROI 偏移）
             q_orig = best.astype(np.float32) * np.array(
                 [self._scale_x, self._scale_y], np.float32)
+            q_orig[:, 1] += self._roi_y0
             dbg["quad"] = q_orig
             dbg["closure"] = best_score
         else:
